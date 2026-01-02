@@ -4,9 +4,9 @@
       {
         "actions": [
           {
-            "name": "Cleanup-Temp",
+            "name": "WorkspaceApp_Reset",
             "params": {
-              "days": 7
+              "KillAllCitrixProcesses": false
             },
             "mode": "Silent"
           }

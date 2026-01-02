@@ -9,7 +9,8 @@
     "supportText": "Support: helpdesk@example.org"
   },
   "logging": {
-    "relativeLogPath": "logs"
+    "relativeLogPath": "logs",
+    "adminLogRoot": ""
   },
   "flags": {
     "allowOffline": true,
