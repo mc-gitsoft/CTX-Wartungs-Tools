@@ -1,18 +1,27 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+[CmdletBinding()]
+param(
+    [ValidateSet('Interactive','Silent')]
+    [string]$Mode = 'Interactive',
+    [hashtable]$Params = @{}
+)
 
-# ==========================
-# Logging (nur Konsole)
-# ==========================
+$toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
+$actionName = 'Teams_Reset'
+
 function Write-Log {
     param(
         [string]$Message,
         [ValidateSet('INFO','WARN','ERROR')] [string]$Level = 'INFO'
     )
-    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    Write-Host "[$ts] [$Level] $Message"
+    WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
 }
 
+if ($Mode -eq 'Interactive') {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+}
 # ==========================
 # Prozesse beenden
 # ==========================
@@ -376,3 +385,5 @@ $btnRun.Add_Click({
 
 # GUI starten
 [void]$Form.ShowDialog()
+}
+

@@ -1,20 +1,27 @@
-﻿<#  
-    Google Chrome – Reset (Benutzerkontext)
-    ------------------------------------------------------------
-    Modi:
-      - Browserdaten löschen:
-          * Cache + Cookies + Website-Daten für alle Profile
-          * Profile & Lesezeichen bleiben erhalten
-      - Hard-Reset:
-          * kompletter Chrome-Ordner in AppData (Local + Roaming) wird gelöscht
-          * Registry (HKCU:\Software\Google\Chrome) wird bereinigt
-          * Lesezeichen aus dem Standardprofil ("Default") + "First Run" werden gesichert & wiederhergestellt
-#>
+[CmdletBinding()]
+param(
+    [ValidateSet('Interactive','Silent')]
+    [string]$Mode = 'Interactive',
+    [hashtable]$Params = @{}
+)
 
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+$toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
+$actionName = 'MS_Edge_Reset'
 
-# ============================================================
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR')] [string]$Level = 'INFO'
+    )
+    WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
+}
+
+if ($Mode -eq 'Interactive') {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+}
 # 0) Logging-Fallback (falls Write-Log vom Hauptskript nicht existiert)
 # ============================================================
 if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
@@ -24,10 +31,7 @@ if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
             [ValidateSet('INFO','WARN','ERROR')]
             [string]$Level = 'INFO'
         )
-
-        $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        $prefix = "[ChromeReset][$Level]"
-
+        $prefix = "[EdgeReset][$Level]"
         switch ($Level) {
             'INFO'  { Write-Host "$prefix $Message" -ForegroundColor Gray }
             'WARN'  { Write-Host "$prefix $Message" -ForegroundColor Yellow }
@@ -36,23 +40,23 @@ if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
     }
 }
 
-Write-Log "=== Google Chrome Reset (GUI) gestartet ==="
+Write-Log "=== Microsoft Edge Reset (GUI) gestartet ==="
 
 # globale Statusvariablen
-$script:overallSuccess   = $true
-$script:bookmarkBackupOk = $false
+$script:overallSuccess     = $true
+$script:favoritesBackupOk  = $false
 
 # Standardpfade
-$script:ChromeUserDataRoot   = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'
-$script:ChromeDefaultPath    = Join-Path $script:ChromeUserDataRoot 'Default'
-# Backup außerhalb des Chrome-Ordners, damit Hard-Reset ihn nicht löscht
-$script:BackupFolder         = Join-Path $env:LOCALAPPDATA 'Wartungsscript\ChromeRestore'
+$script:EdgeUserDataRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
+$script:EdgeDefaultPath  = Join-Path $script:EdgeUserDataRoot 'Default'
+# Backup außerhalb des Edge-Ordners, damit Hard-Reset ihn nicht löscht
+$script:BackupFolder      = Join-Path $env:LOCALAPPDATA 'Wartungsscript\EdgeRestore'
 
 # ============================================================
-# 1) Chrome-Prozesse nur im aktuellen User-Session-Kontext beenden
+# 1) Edge-Prozesse nur im aktuellen User-Session-Kontext beenden
 # ============================================================
-function Stop-ChromeProcesses {
-    Write-Log "Beende Chrome-Prozesse des aktuellen Benutzers..."
+function Stop-EdgeProcesses {
+    Write-Log "Beende Edge-Prozesse des aktuellen Benutzers..."
 
     try {
         $sessionId = (Get-Process -Id $PID).SessionId
@@ -62,7 +66,8 @@ function Stop-ChromeProcesses {
         $sessionId = $null
     }
 
-    $targets = @("chrome", "googleupdate", "googlecrashhandler")
+    # Edge + WebView2 (kommt in Citrix/Apps gern vor)
+    $targets = @("msedge", "msedgewebview2")
 
     for ($i = 1; $i -le 8; $i++) {
         try {
@@ -84,21 +89,22 @@ function Stop-ChromeProcesses {
         Start-Sleep -Milliseconds 300
     }
 
-    Write-Log "Chrome-Prozesse beendet."
+    Write-Log "Edge-Prozesse beendet."
 }
 
 # ============================================================
 # 2) Browserdaten löschen (Cache + Cookies + Website-Daten, alle Profile)
 # ============================================================
-function Clear-ChromeBrowserData {
-    Write-Log "Starte Löschung von Browserdaten (Cache + Cookies + Website-Daten) für alle Chrome-Profile …"
+function Clear-EdgeBrowserData {
+    Write-Log "Starte Löschung von Browserdaten (Cache + Cookies + Website-Daten) für alle Edge-Profile …"
 
-    if (-not (Test-Path $script:ChromeUserDataRoot)) {
-        Write-Log ("Chrome User Data Pfad nicht vorhanden: {0}" -f $script:ChromeUserDataRoot) 'WARN'
+    if (-not (Test-Path $script:EdgeUserDataRoot)) {
+        Write-Log ("Edge User Data Pfad nicht vorhanden: {0}" -f $script:EdgeUserDataRoot) 'WARN'
         return
     }
 
-    $profileDirs = Get-ChildItem -Path $script:ChromeUserDataRoot -Directory -ErrorAction SilentlyContinue |
+    # Profile: Default, Profile 1/2/…, Guest/System Profile
+    $profileDirs = Get-ChildItem -Path $script:EdgeUserDataRoot -Directory -ErrorAction SilentlyContinue |
                    Where-Object { $_.Name -eq 'Default' -or $_.Name -like 'Profile *' -or $_.Name -in @('Guest Profile','System Profile') }
 
     # Cache-Ordner
@@ -183,10 +189,10 @@ function Clear-ChromeBrowserData {
         }
     }
 
-    # einige globale Cache-Strukturen direkt unter User Data
+    # ein paar globale Cache-Strukturen direkt unter User Data
     $globalCacheDirs = @('Crashpad', 'SwReporter', 'ShaderCache')
     foreach ($g in $globalCacheDirs) {
-        $p = Join-Path $script:ChromeUserDataRoot $g
+        $p = Join-Path $script:EdgeUserDataRoot $g
         try {
             if (Test-Path $p) {
                 Remove-Item -Path $p -Recurse -Force -ErrorAction Stop
@@ -203,22 +209,21 @@ function Clear-ChromeBrowserData {
 }
 
 # ============================================================
-# 3) Chrome-Registry (HKCU) bereinigen
+# 3) Edge-Registry (HKCU) bereinigen
 # ============================================================
-function Clear-ChromeRegistry {
-    Write-Log "Bereinige Chrome-Registry-Einträge (HKCU)..."
+function Clear-EdgeRegistry {
+    Write-Log "Bereinige Edge-Registry-Einträge (HKCU)..."
 
-    $chromeRootKey = "HKCU:\Software\Google\Chrome"
+    $edgeRootKey = "HKCU:\Software\Microsoft\Edge"
 
-    # Wenn der Schlüssel gar nicht existiert → fertig
-    if (-not (Test-Path $chromeRootKey)) {
-        Write-Log ("Registry nicht vorhanden: {0}" -f $chromeRootKey)
+    if (-not (Test-Path $edgeRootKey)) {
+        Write-Log ("Registry nicht vorhanden: {0}" -f $edgeRootKey)
         return
     }
 
-    # --- Unterschlüssel rekursiv löschen ---
+    # Unterschlüssel löschen
     try {
-        Get-ChildItem -Path $chromeRootKey -ErrorAction SilentlyContinue |
+        Get-ChildItem -Path $edgeRootKey -ErrorAction SilentlyContinue |
             Sort-Object -Property PSPath -Descending |
             ForEach-Object {
                 try {
@@ -232,63 +237,63 @@ function Clear-ChromeRegistry {
             }
     }
     catch {
-        Write-Log ("Fehler beim Auflisten der Chrome-Unterschlüssel: {0}" -f $_.Exception.Message) 'WARN'
+        Write-Log ("Fehler beim Auflisten der Edge-Unterschlüssel: {0}" -f $_.Exception.Message) 'WARN'
         $script:overallSuccess = $false
     }
 
-    # --- Werte direkt unter HKCU\Software\Google\Chrome löschen ---
+    # Werte direkt unter Root löschen
     try {
-        $props = Get-ItemProperty -Path $chromeRootKey -ErrorAction Stop
+        $props = Get-ItemProperty -Path $edgeRootKey -ErrorAction Stop
 
         foreach ($prop in $props.PSObject.Properties) {
             if ($prop.Name -in 'PSPath','PSParentPath','PSChildName','PSDrive','PSProvider') { continue }
 
             try {
-                Remove-ItemProperty -Path $chromeRootKey -Name $prop.Name -ErrorAction SilentlyContinue
-                Write-Log ("Registry-Wert gelöscht: {0} -> {1}" -f $chromeRootKey, $prop.Name)
+                Remove-ItemProperty -Path $edgeRootKey -Name $prop.Name -ErrorAction SilentlyContinue
+                Write-Log ("Registry-Wert gelöscht: {0} -> {1}" -f $edgeRootKey, $prop.Name)
             }
             catch {
-                Write-Log ("Fehler beim Löschen von Wert {0} in {1}: {2}" -f $prop.Name, $chromeRootKey, $_.Exception.Message) 'WARN'
+                Write-Log ("Fehler beim Löschen von Wert {0} in {1}: {2}" -f $prop.Name, $edgeRootKey, $_.Exception.Message) 'WARN'
                 $script:overallSuccess = $false
             }
         }
     }
     catch {
-        Write-Log ("Fehler beim Lesen der Werte unter {0}: {1}" -f $chromeRootKey, $_.Exception.Message) 'WARN'
+        Write-Log ("Fehler beim Lesen der Werte unter {0}: {1}" -f $edgeRootKey, $_.Exception.Message) 'WARN'
         $script:overallSuccess = $false
     }
 
-    # --- Root-Schlüssel optional entfernen ---
+    # Root optional entfernen
     try {
-        Remove-Item -Path $chromeRootKey -Force -Recurse -ErrorAction SilentlyContinue -Confirm:$false
+        Remove-Item -Path $edgeRootKey -Force -Recurse -ErrorAction SilentlyContinue -Confirm:$false
 
-        if (-not (Test-Path $chromeRootKey)) {
-            Write-Log ("Chrome-Root-Schlüssel entfernt: {0}" -f $chromeRootKey)
+        if (-not (Test-Path $edgeRootKey)) {
+            Write-Log ("Edge-Root-Schlüssel entfernt: {0}" -f $edgeRootKey)
         }
         else {
-            Write-Log ("Chrome-Root-Schlüssel konnte nicht entfernt werden (Policy/Berechtigung), Unterstruktur bereinigt: {0}" -f $chromeRootKey) 'INFO'
+            Write-Log ("Edge-Root-Schlüssel konnte nicht entfernt werden (Policy/Berechtigung), Unterstruktur bereinigt: {0}" -f $edgeRootKey) 'INFO'
         }
     }
     catch {
-        Write-Log ("Chrome-Root-Schlüssel konnte nicht entfernt werden (Policy/Berechtigung). Unterstruktur wurde bereinigt: {0}" -f $chromeRootKey) 'INFO'
+        Write-Log ("Edge-Root-Schlüssel konnte nicht entfernt werden (Policy/Berechtigung). Unterstruktur wurde bereinigt: {0}" -f $edgeRootKey) 'INFO'
     }
 }
 
 # ============================================================
-# 4) Bookmarks + "First Run" sichern / wiederherstellen
+# 4) Favoriten + "First Run" sichern / wiederherstellen
 # ============================================================
-function Backup-ChromeBookmarks {
-    $script:bookmarkBackupOk = $false
+function Backup-EdgeFavorites {
+    $script:favoritesBackupOk = $false
 
-    $bookmarksFile = Join-Path $script:ChromeDefaultPath 'Bookmarks'
-    $firstRunFile  = Join-Path $script:ChromeUserDataRoot 'First Run'
+    # Favoriten sind auch bei Edge: "Bookmarks" (Chromium)
+    $favoritesFile = Join-Path $script:EdgeDefaultPath 'Bookmarks'
+    $firstRunFile  = Join-Path $script:EdgeUserDataRoot 'First Run'
 
-    if (-not (Test-Path $bookmarksFile)) {
-        Write-Log ("Keine Bookmarks-Datei gefunden: {0}" -f $bookmarksFile) 'WARN'
+    if (-not (Test-Path $favoritesFile)) {
+        Write-Log ("Keine Favoriten-Datei gefunden: {0}" -f $favoritesFile) 'WARN'
     }
 
-    if (-not (Test-Path $bookmarksFile) -and -not (Test-Path $firstRunFile)) {
-        # nichts zu sichern
+    if (-not (Test-Path $favoritesFile) -and -not (Test-Path $firstRunFile)) {
         return
     }
 
@@ -304,21 +309,21 @@ function Backup-ChromeBookmarks {
         }
     }
 
-    # Bookmarks sichern (wenn vorhanden)
-    if (Test-Path $bookmarksFile) {
+    # Favoriten sichern
+    if (Test-Path $favoritesFile) {
         try {
-            Copy-Item -Path $bookmarksFile -Destination $script:BackupFolder -Force
-            Write-Log ("Lesezeichen wurden nach {0} gesichert." -f $script:BackupFolder)
-            $script:bookmarkBackupOk = $true
+            Copy-Item -Path $favoritesFile -Destination $script:BackupFolder -Force
+            Write-Log ("Favoriten wurden nach {0} gesichert." -f $script:BackupFolder)
+            $script:favoritesBackupOk = $true
         }
         catch {
-            Write-Log ("Fehler beim Sichern der Lesezeichen: {0}" -f $_.Exception.Message) 'ERROR'
-            $script:overallSuccess   = $false
-            $script:bookmarkBackupOk = $false
+            Write-Log ("Fehler beim Sichern der Favoriten: {0}" -f $_.Exception.Message) 'ERROR'
+            $script:overallSuccess    = $false
+            $script:favoritesBackupOk = $false
         }
     }
 
-    # "First Run" sichern (wenn vorhanden)
+    # First Run sichern
     if (Test-Path $firstRunFile) {
         try {
             Copy-Item -Path $firstRunFile -Destination (Join-Path $script:BackupFolder 'First Run') -Force
@@ -331,26 +336,26 @@ function Backup-ChromeBookmarks {
     }
 }
 
-function Restore-ChromeBookmarks {
+function Restore-EdgeFavorites {
     # User Data Root sicherstellen
-    if (-not (Test-Path $script:ChromeUserDataRoot)) {
+    if (-not (Test-Path $script:EdgeUserDataRoot)) {
         try {
-            New-Item -ItemType Directory -Path $script:ChromeUserDataRoot -ErrorAction Stop | Out-Null
-            Write-Log ("Chrome User Data Root neu erstellt: {0}" -f $script:ChromeUserDataRoot)
+            New-Item -ItemType Directory -Path $script:EdgeUserDataRoot -ErrorAction Stop | Out-Null
+            Write-Log ("Edge User Data Root neu erstellt: {0}" -f $script:EdgeUserDataRoot)
         }
         catch {
-            Write-Log ("Fehler beim Erstellen von Chrome User Data Root: {0}" -f $_.Exception.Message) 'ERROR'
+            Write-Log ("Fehler beim Erstellen von Edge User Data Root: {0}" -f $_.Exception.Message) 'ERROR'
             $script:overallSuccess = $false
             return
         }
     }
 
-    # "First Run" wiederherstellen (unabhängig von Bookmarks)
+    # First Run wiederherstellen (unabhängig von Favoriten)
     $backupFirstRun = Join-Path $script:BackupFolder 'First Run'
     if (Test-Path $backupFirstRun) {
         try {
-            Copy-Item -Path $backupFirstRun -Destination (Join-Path $script:ChromeUserDataRoot 'First Run') -Force
-            Write-Log ("'First Run'-Datei wurde wiederhergestellt: {0}" -f (Join-Path $script:ChromeUserDataRoot 'First Run'))
+            Copy-Item -Path $backupFirstRun -Destination (Join-Path $script:EdgeUserDataRoot 'First Run') -Force
+            Write-Log ("'First Run'-Datei wurde wiederhergestellt: {0}" -f (Join-Path $script:EdgeUserDataRoot 'First Run'))
         }
         catch {
             Write-Log ("Fehler beim Wiederherstellen der 'First Run'-Datei: {0}" -f $_.Exception.Message) 'WARN'
@@ -358,109 +363,107 @@ function Restore-ChromeBookmarks {
         }
     }
 
-    # Bookmarks nur, wenn Backup erfolgreich war
-    if (-not $script:bookmarkBackupOk) {
-        Write-Log "Bookmark-Backup war nicht erfolgreich – keine Wiederherstellung der Lesezeichen möglich." 'WARN'
+    # Favoriten nur wenn Backup OK
+    if (-not $script:favoritesBackupOk) {
+        Write-Log "Favoriten-Backup war nicht erfolgreich – keine Wiederherstellung möglich." 'WARN'
         return
     }
 
-    $backupBookmarksFile = Join-Path $script:BackupFolder 'Bookmarks'
-
-    if (-not (Test-Path $backupBookmarksFile)) {
-        Write-Log ("Gesicherte Bookmarks-Datei nicht gefunden: {0}" -f $backupBookmarksFile) 'WARN'
+    $backupFavoritesFile = Join-Path $script:BackupFolder 'Bookmarks'
+    if (-not (Test-Path $backupFavoritesFile)) {
+        Write-Log ("Gesicherte Favoriten-Datei nicht gefunden: {0}" -f $backupFavoritesFile) 'WARN'
         return
     }
 
     try {
-        if (-not (Test-Path $script:ChromeDefaultPath)) {
-            New-Item -ItemType Directory -Path $script:ChromeDefaultPath -ErrorAction Stop | Out-Null
-            Write-Log ("Neuen Default-Ordner erstellt: {0}" -f $script:ChromeDefaultPath)
+        if (-not (Test-Path $script:EdgeDefaultPath)) {
+            New-Item -ItemType Directory -Path $script:EdgeDefaultPath -ErrorAction Stop | Out-Null
+            Write-Log ("Neuen Default-Ordner erstellt: {0}" -f $script:EdgeDefaultPath)
         }
 
-        Copy-Item -Path $backupBookmarksFile -Destination $script:ChromeDefaultPath -Force
-        Write-Log ("Lesezeichen wurden erfolgreich wiederhergestellt nach: {0}" -f $script:ChromeDefaultPath)
+        Copy-Item -Path $backupFavoritesFile -Destination $script:EdgeDefaultPath -Force
+        Write-Log ("Favoriten wurden erfolgreich wiederhergestellt nach: {0}" -f $script:EdgeDefaultPath)
     }
     catch {
-        Write-Log ("Fehler beim Wiederherstellen der Lesezeichen: {0}" -f $_.Exception.Message) 'ERROR'
+        Write-Log ("Fehler beim Wiederherstellen der Favoriten: {0}" -f $_.Exception.Message) 'ERROR'
         $script:overallSuccess = $false
     }
 }
 
-function Cleanup-BookmarkBackup {
+function Cleanup-EdgeBackup {
     if (Test-Path $script:BackupFolder) {
         try {
             Remove-Item -Path $script:BackupFolder -Recurse -Force -ErrorAction Stop
-            Write-Log ("Bookmark-Backup-Ordner gelöscht: {0}" -f $script:BackupFolder)
+            Write-Log ("Backup-Ordner gelöscht: {0}" -f $script:BackupFolder)
         }
         catch {
-            Write-Log ("Fehler beim Löschen des Bookmark-Backups: {0}" -f $_.Exception.Message) 'WARN'
+            Write-Log ("Fehler beim Löschen des Backup-Ordners: {0}" -f $_.Exception.Message) 'WARN'
             $script:overallSuccess = $false
         }
     }
 }
 
 # ============================================================
-# 5) Hard-Reset (kompletter Chrome-Baum in AppData)
+# 5) Hard-Reset (kompletter Edge-Baum in AppData)
 # ============================================================
-function Reset-ChromeHard {
-    Write-Log "Starte Hard-Reset für Chrome…"
+function Reset-EdgeHard {
+    Write-Log "Starte Hard-Reset für Edge…"
 
-    Backup-ChromeBookmarks
+    Backup-EdgeFavorites
 
-    # kompletter Chrome-Ordner in Local + Roaming AppData
-    $localChrome   = Join-Path $env:LOCALAPPDATA 'Google\Chrome'
-    $roamingChrome = Join-Path $env:APPDATA      'Google\Chrome'
+    $localEdge   = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge'
+    $roamingEdge = Join-Path $env:APPDATA      'Microsoft\Edge'
 
-    foreach ($p in @($localChrome, $roamingChrome)) {
+    foreach ($p in @($localEdge, $roamingEdge)) {
         try {
             if (Test-Path $p) {
                 Remove-Item -Path $p -Recurse -Force -ErrorAction Stop
-                Write-Log ("Chrome-Ordner gelöscht: {0}" -f $p)
+                Write-Log ("Edge-Ordner gelöscht: {0}" -f $p)
             }
             else {
-                Write-Log ("Chrome-Ordner nicht vorhanden: {0}" -f $p)
+                Write-Log ("Edge-Ordner nicht vorhanden: {0}" -f $p)
             }
         }
         catch {
-            Write-Log ("Fehler beim Löschen von Chrome-Ordner {0}: {1}" -f $p, $_.Exception.Message) 'WARN'
+            Write-Log ("Fehler beim Löschen von Edge-Ordner {0}: {1}" -f $p, $_.Exception.Message) 'WARN'
             $script:overallSuccess = $false
         }
     }
 
-    Clear-ChromeRegistry
+    Clear-EdgeRegistry
 
-    # Pfade neu setzen, falls User Data Root gelöscht wurde
-    $script:ChromeUserDataRoot = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data'
-    $script:ChromeDefaultPath  = Join-Path $script:ChromeUserDataRoot 'Default'
+    # Pfade neu setzen (weil Local gelöscht wurde)
+    $script:EdgeUserDataRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data'
+    $script:EdgeDefaultPath  = Join-Path $script:EdgeUserDataRoot 'Default'
 
-    Restore-ChromeBookmarks
-    Cleanup-BookmarkBackup
+    Restore-EdgeFavorites
+    Cleanup-EdgeBackup
 
     Write-Log "Hard-Reset abgeschlossen."
 }
 
 # ============================================================
-# 6) Hauptfunktion: Invoke-ChromeReset
+# 6) Hauptfunktion: Invoke-EdgeReset
 # ============================================================
-function Invoke-ChromeReset {
+function Invoke-EdgeReset {
     [CmdletBinding()]
     param(
         [switch]$BrowserDataReset,
         [switch]$HardReset
     )
 
-    Write-Log "Chrome-Reset gestartet …"
+    Write-Log "Edge-Reset gestartet …"
 
-    Stop-ChromeProcesses
+    Stop-EdgeProcesses
 
     if ($HardReset) {
-        Reset-ChromeHard
+        Reset-EdgeHard
     }
     elseif ($BrowserDataReset) {
-        Clear-ChromeBrowserData
+        Clear-EdgeBrowserData
     }
 
-    Write-Log "Chrome-Reset abgeschlossen."
+    Write-Log "Edge-Reset abgeschlossen."
 
     return @{
         ExitCode = $(if ($script:overallSuccess) { 0 } else { 1 })
@@ -470,10 +473,10 @@ function Invoke-ChromeReset {
 }
 
 # ============================================================
-# 7) GUI
+# 7) GUI (gleiches Layout wie Chrome)
 # ============================================================
 $Form               = New-Object System.Windows.Forms.Form
-$Form.Text          = "Google Chrome – Reset"
+$Form.Text          = "Microsoft Edge – Reset"
 $Form.StartPosition = "CenterScreen"
 $Form.Size          = New-Object System.Drawing.Size(780, 460)
 $Form.MaximizeBox   = $false
@@ -504,9 +507,9 @@ function Add-Label {
     $script:y += $label.Height + 8
 }
 
-Add-Label "Google Chrome – Reset" 12 $true
-Add-Label "Browserdaten löschen: entfernt Cache, Cookies und Website-Daten für alle Chrome-Profile. Profile und Lesezeichen bleiben erhalten (empfohlen als erster Schritt)." 10 $false ([System.Drawing.Color]::DarkRed)
-Add-Label "Hard-Reset: setzt Chrome komplett zurück. Der komplette Chrome-Ordner in AppData (Local + Roaming) wird gelöscht und neu erstellt. Lesezeichen aus dem Standardprofil sowie die 'First Run'-Information werden gesichert und wiederhergestellt." 10 $false ([System.Drawing.Color]::DarkRed)
+Add-Label "Microsoft Edge – Reset" 12 $true
+Add-Label "Browserdaten löschen: entfernt Cache, Cookies und Website-Daten für alle Edge-Profile. Profile und Favoriten bleiben erhalten (empfohlen als erster Schritt)." 10 $false ([System.Drawing.Color]::DarkRed)
+Add-Label "Hard-Reset: setzt Edge komplett zurück. Der komplette Edge-Ordner in AppData (Local + Roaming) wird gelöscht und neu erstellt. Favoriten aus dem Standardprofil sowie die 'First Run'-Information werden gesichert und wiederhergestellt." 10 $false ([System.Drawing.Color]::DarkRed)
 
 # GroupBox für Aktionen
 $grp = New-Object System.Windows.Forms.GroupBox
@@ -528,7 +531,7 @@ function Add-Check {
 }
 
 $cbBrowser = Add-Check "Browserdaten löschen (Cache + Cookies + Website-Daten) – empfohlen"
-$cbHard    = Add-Check "Hard-Reset: Chrome komplett zurücksetzen (AppData + Registry, Bookmarks + 'First Run' bleiben)"
+$cbHard    = Add-Check "Hard-Reset: Edge komplett zurücksetzen (AppData + Registry, Favoriten + 'First Run' bleiben)"
 
 # Standard: nur Browserdaten aktiv
 $cbBrowser.Checked = $true
@@ -575,19 +578,16 @@ $btnRun.Add_Click({
         return
     }
 
-    # Bestätigungen
     if ($cbHard.Checked) {
         $resHard = [System.Windows.Forms.MessageBox]::Show(
-            "ACHTUNG: Hard-Reset entfernt alle Chrome-Daten in AppData (Local + Roaming) und setzt Chrome vollständig zurück." +
-            "`nLesezeichen aus dem Standardprofil sowie die 'First Run'-Information werden gesichert und wiederhergestellt." +
+            "ACHTUNG: Hard-Reset entfernt alle Edge-Daten in AppData (Local + Roaming) und setzt Edge vollständig zurück." +
+            "`nFavoriten aus dem Standardprofil sowie die 'First Run'-Information werden gesichert und wiederhergestellt." +
             "`n`nFortfahren?",
             "Hard-Reset bestätigen",
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Warning
         )
-        if ($resHard -ne [System.Windows.Forms.DialogResult]::Yes) {
-            return
-        }
+        if ($resHard -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     }
     elseif ($cbBrowser.Checked) {
         $resBrowser = [System.Windows.Forms.MessageBox]::Show(
@@ -597,17 +597,15 @@ $btnRun.Add_Click({
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Warning
         )
-        if ($resBrowser -ne [System.Windows.Forms.DialogResult]::Yes) {
-            return
-        }
+        if ($resBrowser -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     }
 
-    $btnRun.Enabled             = $false
-    $script:overallSuccess      = $true
-    $script:bookmarkBackupOk    = $false
+    $btnRun.Enabled            = $false
+    $script:overallSuccess     = $true
+    $script:favoritesBackupOk  = $false
 
     try {
-        $result = Invoke-ChromeReset `
+        $null = Invoke-EdgeReset `
             -BrowserDataReset:$cbBrowser.Checked `
             -HardReset:$cbHard.Checked
 
@@ -632,4 +630,7 @@ $btnRun.Add_Click({
 })
 
 [void]$Form.ShowDialog()
-Write-Log "=== Google Chrome Reset (GUI) beendet ==="
+Write-Log "=== Microsoft Edge Reset (GUI) beendet ==="
+}
+}
+

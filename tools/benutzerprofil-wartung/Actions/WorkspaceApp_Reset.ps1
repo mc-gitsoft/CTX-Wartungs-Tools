@@ -1,34 +1,32 @@
 [CmdletBinding()]
 param(
+    [ValidateSet('Interactive','Silent')]
+    [string]$Mode = 'Interactive',
+    [hashtable]$Params = @{},
     # Optional: auch Laufzeit-/Sitzungsprozesse (wfica32 etc.) beenden.
     # WARNUNG: Beendet ggf. aktive Sitzungen dieses Benutzers in dieser Session.
     [switch]$KillAllCitrixProcesses
 )
 
-Write-Host "Citrix Workspace App zurücksetzen (Benutzerprofil):"
-Write-Host "---------------------------------------------------"
+$toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
+$actionName = 'WorkspaceApp_Reset'
 
-# --------------------------------------------------------------------
-# 0) Logging-Fallback, falls Write-Log nicht bereits im Wartungsskript existiert
-# --------------------------------------------------------------------
-if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
-    function Write-Log {
-        param(
-            [Parameter(Mandatory)]
-            [string]$Message,
-            [ValidateSet('INFO','WARN','ERROR')]
-            [string]$Level = 'INFO'
-        )
+function Write-Log {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR')]
+        [string]$Level = 'INFO'
+    )
 
-        $prefix = "[CitrixReset][$Level]"
-        switch ($Level) {
-            'INFO'  { Write-Host "$prefix $Message" -ForegroundColor Gray }
-            'WARN'  { Write-Host "$prefix $Message" -ForegroundColor Yellow }
-            'ERROR' { Write-Host "$prefix $Message" -ForegroundColor Red }
-        }
-    }
+    WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
 }
 
+if ($Params.ContainsKey('KillAllCitrixProcesses')) {
+    $KillAllCitrixProcesses = [bool]$Params.KillAllCitrixProcesses
+}
 # --------------------------------------------------------------------
 # 1) Helper: Citrix-Prozesse nur in der aktuellen User-Session beenden
 # --------------------------------------------------------------------
@@ -62,7 +60,7 @@ function Stop-CitrixProcessesUserScoped {
                 } | Stop-Process -Force -ErrorAction SilentlyContinue
             }
             else {
-                # Fallback: kein Session-Filter möglich
+                # Fallback: kein Session-Filter mï¿½glich
                 Get-Process -ErrorAction SilentlyContinue | Where-Object {
                     $processNamesNormalized -contains $_.Name.ToLower()
                 } | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -79,25 +77,25 @@ function Stop-CitrixProcessesUserScoped {
 # --------------------------------------------------------------------
 # 2) Prozesslisten definieren
 # --------------------------------------------------------------------
-# Basis: für Profil-/SelfService-Reset relevante Prozesse
+# Basis: fï¿½r Profil-/SelfService-Reset relevante Prozesse
 $baseCitrixProcesses = @(
     "SelfService",
     "SelfServicePlugin",
     "Receiver",
     "wfcrun32",
     "WebHelper",
-    # >>> Ergänzungen wie gewünscht
+    # >>> Ergï¿½nzungen wie gewï¿½nscht
     "AuthManager",
     "redirector",
     "concentr",
     "cdviewer"
 )
 
-# Optional: zusätzliche HDX-/Sitzungsprozesse (nur mit -KillAllCitrixProcesses)
+# Optional: zusï¿½tzliche HDX-/Sitzungsprozesse (nur mit -KillAllCitrixProcesses)
 $extraCitrixProcesses = @(
     "wfica32",          # ICA-Client
     "concentr",         # Connection Center (bleibt, auch wenn schon in base -> wird dedupliziert)
-    "pnamain",          # pnagent / älter
+    "pnamain",          # pnagent / ï¿½lter
     "wfshell",          # Citrix Shell
     "ssonsvr"           # Single Sign-On Service im Userkontext
 )
@@ -118,7 +116,7 @@ Stop-CitrixProcessesUserScoped -ProcessNames $targetProcesses
 # --------------------------------------------------------------------
 # 4) Benutzerordner bereinigen
 # --------------------------------------------------------------------
-Write-Log "[2/4] Lösche Citrix-Ordner im Benutzerprofil..." 'INFO'
+Write-Log "[2/4] Lï¿½sche Citrix-Ordner im Benutzerprofil..." 'INFO'
 
 $pathsToDelete = @(
     "$env:APPDATA\Citrix\SelfService",
@@ -132,19 +130,19 @@ $pathsToDelete = @(
 foreach ($path in $pathsToDelete) {
     try {
         if (Test-Path $path) {
-            Write-Log "Lösche Ordner: $path" 'INFO'
+            Write-Log "Lï¿½sche Ordner: $path" 'INFO'
             Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
     catch {
-        Write-Log "Fehler beim Löschen von '$path': $($_.Exception.Message)" 'WARN'
+        Write-Log "Fehler beim Lï¿½schen von '$path': $($_.Exception.Message)" 'WARN'
     }
 }
 
 # --------------------------------------------------------------------
 # 5) HKCU-Registry-Reste entfernen
 # --------------------------------------------------------------------
-Write-Log "[3/4] Entferne Citrix-Registry-Einträge (HKCU)..." 'INFO'
+Write-Log "[3/4] Entferne Citrix-Registry-Eintrï¿½ge (HKCU)..." 'INFO'
 
 $regKeysToDelete = @(
     "HKCU:\Software\Citrix\Receiver",
@@ -157,27 +155,27 @@ $regKeysToDelete = @(
 foreach ($key in $regKeysToDelete) {
     try {
         if (Test-Path $key) {
-            Write-Log "Lösche Registry-Schlüssel: $key" 'INFO'
+            Write-Log "Lï¿½sche Registry-Schlï¿½ssel: $key" 'INFO'
             Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
     catch {
-        Write-Log "Fehler beim Löschen von Registry-Schlüssel '$key': $($_.Exception.Message)" 'WARN'
+        Write-Log "Fehler beim Lï¿½schen von Registry-Schlï¿½ssel '$key': $($_.Exception.Message)" 'WARN'
     }
 }
 
 # --------------------------------------------------------------------
-# 6) Zum Schluss: CleanUp.exe (cleanUser) ausführen
+# 6) Zum Schluss: CleanUp.exe (cleanUser) ausfï¿½hren
 # --------------------------------------------------------------------
-Write-Log "[4/4] Führe Citrix CleanUp.exe (cleanUser) aus..." 'INFO'
+Write-Log "[4/4] Fï¿½hre Citrix CleanUp.exe (cleanUser) aus..." 'INFO'
 
 # >>> Erweiterte Kandidatenliste (32/64-bit + weitere typische Pfade)
 $cleanUpCandidates = @(
-    # bewährte Pfade (deine)
+    # bewï¿½hrte Pfade (deine)
     "C:\Program Files (x86)\Citrix\ICA Client\SelfServicePlugin\CleanUp.exe",
     "C:\Program Files (x86)\Citrix\online plugin\ica client\SelfServicePlugin\CleanUp.exe",
 
-    # weitere häufige Pfade
+    # weitere hï¿½ufige Pfade
     "C:\Program Files (x86)\Citrix\ICA Client\CleanUp.exe",
     "C:\Program Files\Citrix\ICA Client\SelfServicePlugin\CleanUp.exe",
     "C:\Program Files\Citrix\ICA Client\CleanUp.exe"
@@ -201,7 +199,7 @@ if (-not $cleanUpPath) {
             if ($hit) { $cleanUpPath = $hit; break }
         }
         catch {
-            # keine harte Fehlermeldung nötig
+            # keine harte Fehlermeldung nï¿½tig
         }
     }
 }
@@ -215,25 +213,25 @@ if ($cleanUpPath) {
         $exitCode = $LASTEXITCODE
         if ($exitCode -eq $null) { $exitCode = 0 }  # defensive
         if ($exitCode -eq 0) {
-            Write-Log "CleanUp.exe erfolgreich ausgeführt (ExitCode 0)." 'INFO'
+            Write-Log "CleanUp.exe erfolgreich ausgefï¿½hrt (ExitCode 0)." 'INFO'
         } else {
-            Write-Log "CleanUp.exe beendet mit ExitCode $exitCode (versionsabhängig). Bitte Ergebnis prüfen." 'WARN'
+            Write-Log "CleanUp.exe beendet mit ExitCode $exitCode (versionsabhï¿½ngig). Bitte Ergebnis prï¿½fen." 'WARN'
         }
 
         Start-Sleep -Seconds 5
     }
     catch {
-        Write-Log "Fehler beim Ausführen der CleanUp.exe: $($_.Exception.Message)" 'ERROR'
+        Write-Log "Fehler beim Ausfï¿½hren der CleanUp.exe: $($_.Exception.Message)" 'ERROR'
     }
 } else {
     Write-Log "Keine CleanUp.exe unter den bekannten Pfaden gefunden." 'WARN'
 }
 
-# Sicherheitshalber noch einmal kurz Prozesse abräumen
+# Sicherheitshalber noch einmal kurz Prozesse abrï¿½umen
 #Stop-CitrixProcessesUserScoped -ProcessNames $targetProcesses -Retries 3 -DelayMs 300
 
 Write-Host ""
-Write-Host "Citrix Workspace App wurde im Benutzerprofil so gründlich wie möglich zurückgesetzt." -ForegroundColor Green
+Write-Host "Citrix Workspace App wurde im Benutzerprofil so grï¿½ndlich wie mï¿½glich zurï¿½ckgesetzt." -ForegroundColor Green
 Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 Write-Host ""
 Write-Log "Citrix Workspace App Reset im Benutzerprofil abgeschlossen." 'INFO'

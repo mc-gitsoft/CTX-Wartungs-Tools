@@ -1,29 +1,27 @@
-﻿[CmdletBinding()]
-param()
+[CmdletBinding()]
+param(
+    [ValidateSet('Interactive','Silent')]
+    [string]$Mode = 'Interactive',
+    [hashtable]$Params = @{}
+)
 
-Write-Host "Adobe Acrobat zurücksetzen (Benutzerprofil):"
-Write-Host "-------------------------------------------"
+$toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
+$actionName = 'AdobeReader_Reset'
 
-# =====================================================================
-# 0) Logging-Fallback, falls Write-Log nicht bereits vom Hauptskript
-#    (Wartung_User) bereitgestellt wird
-# =====================================================================
-if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
-    function Write-Log {
-        param(
-            [Parameter(Mandatory)]
-            [string]$Message,
-            [ValidateSet('INFO','WARN','ERROR')]
-            [string]$Level = 'INFO'
-        )
+function Write-Log {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR')]
+        [string]$Level = 'INFO'
+    )
 
-        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-Host "[$ts] [$Level] $Message"
-    }
+    WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
 }
 
-Write-Log "=== Adobe Acrobat Reset (Benutzerkontext) gestartet ==="
-
+Write-Log "=== Adobe Acrobat Reset gestartet ==="
 # =====================================================================
 # 1) Helper: Acrobat-Prozesse nur in der aktuellen User-Session beenden
 # =====================================================================

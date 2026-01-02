@@ -1,6 +1,27 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+[CmdletBinding()]
+param(
+    [ValidateSet('Interactive','Silent')]
+    [string]$Mode = 'Interactive',
+    [hashtable]$Params = @{}
+)
 
+$toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
+$actionName = 'Outlook_Reset'
+
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR')] [string]$Level = 'INFO'
+    )
+    WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
+}
+
+if ($Mode -eq 'Interactive') {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+}
 # ==========================
 # Logging (Fallback, falls nicht vom Hauptskript bereitgestellt)
 # ==========================
@@ -496,3 +517,6 @@ $btnRun.Add_Click({
 
 [void]$Form.ShowDialog()
 Write-Log "=== Outlook Reset (GUI) beendet ==="
+}
+}
+
