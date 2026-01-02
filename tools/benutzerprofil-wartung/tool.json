@@ -1,0 +1,8 @@
+{
+  "toolId": "benutzerprofil-wartung",
+  "name": "Benutzerprofil-Wartung",
+  "version": "0.1.0",
+  "description": "Wartung von Benutzerprofilen in Multiuser-Umgebungen.",
+  "entryPoint": "Start.ps1",
+  "runner": "Runners/Runner.ps1"
+}

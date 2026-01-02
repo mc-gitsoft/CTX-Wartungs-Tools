@@ -1,0 +1,18 @@
+{
+  "repoRoot": "",
+  "fslogix": {
+    "profileShare": "",
+    "officeContainerShare": ""
+  },
+  "branding": {
+    "windowTitle": "CTX Wartung",
+    "supportText": "Support: helpdesk@example.org"
+  },
+  "logging": {
+    "relativeLogPath": "logs"
+  },
+  "flags": {
+    "allowOffline": true,
+    "allowLogoffRunner": true
+  }
+}
