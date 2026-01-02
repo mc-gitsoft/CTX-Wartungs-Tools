@@ -1,0 +1,22 @@
+# Logs
+tools/*/logs/
+tools/*/*.log
+
+# State/Run artifacts (repo-local only)
+tools/*/state/
+tools/*/.state/
+
+# Local test/debug files
+*.tmp
+*.bak
+*.old
+*.debug
+
+# PowerShell user-specific files
+*.ps1xml.user
+*.psm1.user
+
+# Editor/OS
+.vscode/
+.DS_Store
+Thumbs.db
