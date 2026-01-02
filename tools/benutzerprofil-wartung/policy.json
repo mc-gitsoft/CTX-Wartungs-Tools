@@ -1,0 +1,41 @@
+﻿{
+  "logon": {
+    "every": {
+      "enabled": true,
+      "actions": [
+        {
+          "name": "Reset-ProfileCache",
+          "params": { "deep": false },
+          "mode": "Silent"
+        }
+      ]
+    },
+    "once": {
+      "enabled": true,
+      "campaignId": "profil-wartung-q1",
+      "validUntil": "2026-03-31",
+      "actions": [
+        {
+          "name": "Reset-ProfileCache",
+          "params": { "deep": false },
+          "mode": "Silent"
+        }
+      ]
+    }
+  },
+  "logoff": {
+    "every": { "enabled": false, "actions": [] },
+    "once": {
+      "enabled": true,
+      "campaignId": "logoff-cleanup",
+      "validUntil": "2026-03-31",
+      "actions": [
+        {
+          "name": "Cleanup-Temp",
+          "params": { "days": 1 },
+          "mode": "Silent"
+        }
+      ]
+    }
+  }
+}

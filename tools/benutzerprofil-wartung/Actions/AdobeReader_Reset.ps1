@@ -2,11 +2,12 @@
 param(
     [ValidateSet('Interactive','Silent')]
     [string]$Mode = 'Interactive',
-    [hashtable]$Params = @{}
+    [object]$Params = @{}
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$Params = ConvertTo-Hashtable -InputObject $Params
 $toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
 $actionName = 'AdobeReader_Reset'
 
@@ -166,3 +167,5 @@ Write-Host ""
 Write-Host "Adobe Acrobat wurde im Benutzerprofil so weit wie möglich zurückgesetzt." -ForegroundColor Green
 Write-Host "Beim nächsten Start werden Standarddaten und Konfigurationen neu angelegt."
 Write-Host ""
+
+

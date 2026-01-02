@@ -21,3 +21,7 @@ Autarkes Sub-Tool fuer die Wartung von Benutzerprofilen. Kann direkt gestartet w
 ## Runner / GPO
 - `Runners/GPO_Logon.ps1` und `Runners/GPO_Logoff.ps1` rufen `Runner.ps1` auf.
 - Aktionen werden im Runner immer im Silent-Mode ausgefuehrt.
+
+## State (Once)
+- Once-State liegt pro Benutzer unter `%LOCALAPPDATA%\\CTX-Wartungs-Tools\\State\\<toolId>\\`.
+- Dateiname: `logon_once_<campaignId>.json` bzw. `logoff_once_<campaignId>.json`.

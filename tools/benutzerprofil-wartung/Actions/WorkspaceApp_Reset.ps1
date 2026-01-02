@@ -2,7 +2,7 @@
 param(
     [ValidateSet('Interactive','Silent')]
     [string]$Mode = 'Interactive',
-    [hashtable]$Params = @{},
+    [object]$Params = @{},
     # Optional: auch Laufzeit-/Sitzungsprozesse (wfica32 etc.) beenden.
     # WARNUNG: Beendet ggf. aktive Sitzungen dieses Benutzers in dieser Session.
     [switch]$KillAllCitrixProcesses
@@ -10,6 +10,7 @@ param(
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$Params = ConvertTo-Hashtable -InputObject $Params
 $toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
 $actionName = 'WorkspaceApp_Reset'
 
@@ -235,3 +236,5 @@ Write-Host "Citrix Workspace App wurde im Benutzerprofil so gr�ndlich wie m�
 Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 Write-Host ""
 Write-Log "Citrix Workspace App Reset im Benutzerprofil abgeschlossen." 'INFO'
+
+

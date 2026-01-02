@@ -2,11 +2,12 @@
 param(
     [ValidateSet('Interactive','Silent')]
     [string]$Mode = 'Interactive',
-    [hashtable]$Params = @{}
+    [object]$Params = @{}
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
+$Params = ConvertTo-Hashtable -InputObject $Params
 $toolId = (Get-Content (Join-Path $toolRoot 'tool.json') -Raw | ConvertFrom-Json).toolId
 $actionName = 'Google_Chrome_Reset'
 
@@ -646,5 +647,7 @@ $btnRun.Add_Click({
 Write-Log "=== Google Chrome Reset (GUI) beendet ==="
 }
 }
+
+
 
 

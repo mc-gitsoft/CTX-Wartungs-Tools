@@ -92,11 +92,48 @@ function Write-Log {
     Add-Content -Path $filePath -Value $line -Encoding UTF8
 }
 
+function ConvertTo-Hashtable {
+    param(
+        [Parameter(Mandatory)]
+        [object]$InputObject
+    )
+
+    if ($null -eq $InputObject) { return @{} }
+
+    if ($InputObject -is [hashtable]) { return $InputObject }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $ht = @{}
+        foreach ($key in $InputObject.Keys) {
+            $ht[$key] = ConvertTo-Hashtable -InputObject $InputObject[$key]
+        }
+        return $ht
+    }
+
+    if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
+        $list = @()
+        foreach ($item in $InputObject) {
+            $list += ConvertTo-Hashtable -InputObject $item
+        }
+        return $list
+    }
+
+    if ($InputObject -is [pscustomobject]) {
+        $ht = @{}
+        foreach ($prop in $InputObject.PSObject.Properties) {
+            $ht[$prop.Name] = ConvertTo-Hashtable -InputObject $prop.Value
+        }
+        return $ht
+    }
+
+    return $InputObject
+}
+
 function Invoke-Action {
     param(
         [Parameter(Mandatory)]
         [string]$Name,
-        [hashtable]$Params = @{},
+        [object]$Params = @{},
         [ValidateSet("Silent","Interactive")]
         [string]$Mode = "Interactive",
         [switch]$ForceSilent,
@@ -105,6 +142,9 @@ function Invoke-Action {
     )
 
     if ($ForceSilent) { $Mode = "Silent" }
+
+    $Params = ConvertTo-Hashtable -InputObject $Params
+    if ($Params -isnot [hashtable]) { $Params = @{} }
 
     $toolRoot = Get-ToolRoot
     $path = Join-Path $toolRoot "Actions\$Name.ps1"
@@ -115,12 +155,24 @@ function Invoke-Action {
         throw $message
     }
 
-    $invokeParams = @{}
-    if ($Params) { $invokeParams += $Params }
-    $invokeParams["Mode"] = $Mode
+    $command = Get-Command -Name $path -ErrorAction Stop
+    $paramNames = $command.Parameters.Keys
+    $hasParams = $paramNames -contains "Params"
+    $hasMode = $paramNames -contains "Mode"
 
     try {
-        & $path @invokeParams
+        if ($hasParams) {
+            if ($hasMode) {
+                & $path -Params $Params -Mode $Mode
+            } else {
+                & $path -Params $Params
+            }
+        } else {
+            $invokeParams = @{}
+            if ($Params) { $invokeParams += $Params }
+            if ($hasMode) { $invokeParams["Mode"] = $Mode }
+            & $path @invokeParams
+        }
         $exitCode = $LASTEXITCODE
         if ($null -eq $exitCode) { $exitCode = 0 }
         return [pscustomobject]@{
@@ -139,4 +191,5 @@ function Invoke-Action {
     }
 }
 
-Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, Invoke-Action
+Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action
+

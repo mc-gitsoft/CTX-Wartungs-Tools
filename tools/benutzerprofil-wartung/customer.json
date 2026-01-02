@@ -1,0 +1,25 @@
+﻿{
+    "customer":  {
+                     "name":  "Test"
+                 },
+    "paths":  {
+                  "repoRoot":  ""
+              },
+    "fslogix":  {
+                    "enabled":  false,
+                    "profileShare":  "",
+                    "officeContainerShare":  ""
+                },
+    "branding":  {
+                     "windowTitle":  "CTX Wartung",
+                     "supportText":  ""
+                 },
+    "logging":  {
+                    "relativeLogPath":  "logs",
+                    "adminLogRoot":  ""
+                },
+    "flags":  {
+                  "allowOffline":  true,
+                  "allowLogoffRunner":  true
+              }
+}

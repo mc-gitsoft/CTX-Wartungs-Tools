@@ -1,8 +1,10 @@
 param(
     [ValidateSet("Silent","Interactive")]
     [string]$Mode = "Interactive",
-    [hashtable]$Params = @{}
+    [object]$Params = @{}
 )
 
 Write-Output "Action Cleanup-Temp (Mode=$Mode). TODO: implement." 
 exit 0
+
+
