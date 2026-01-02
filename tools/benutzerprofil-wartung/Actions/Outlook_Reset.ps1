@@ -18,6 +18,8 @@ function Write-Log {
     WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
 }
 
+Write-Log ("Mode={0}" -f $Mode)
+
 if ($Mode -eq 'Interactive') {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -35,6 +37,8 @@ if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) {
         Write-Host "[$ts] [$Level] $Message"
     }
 }
+
+Write-Log ("Mode={0}" -f $Mode)
 
 Write-Log "=== Outlook Reset (GUI) gestartet ==="
 
@@ -519,4 +523,5 @@ $btnRun.Add_Click({
 Write-Log "=== Outlook Reset (GUI) beendet ==="
 }
 }
+
 
