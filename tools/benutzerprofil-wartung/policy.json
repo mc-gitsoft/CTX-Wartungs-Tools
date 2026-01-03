@@ -3,13 +3,7 @@
                   "every":  {
                                 "enabled":  false,
                                 "actions":  [
-                                                {
-                                                    "name":  "Cleanup-Temp",
-                                                    "mode":  "Silent",
-                                                    "params":  {
 
-                                                               }
-                                                }
                                             ]
                             },
                   "once":  [
@@ -20,13 +14,7 @@
                    "every":  {
                                  "enabled":  false,
                                  "actions":  [
-                                                 {
-                                                     "name":  "Reset-ProfileCache",
-                                                     "mode":  "Silent",
-                                                     "params":  {
 
-                                                                }
-                                                 }
                                              ]
                              },
                    "once":  [

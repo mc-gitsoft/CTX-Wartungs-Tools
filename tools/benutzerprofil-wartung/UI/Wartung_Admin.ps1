@@ -330,15 +330,6 @@ $policyRoot.ColumnCount = 1
 $policyRoot.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
 $policyRoot.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
 
-$tlpPolicy = New-Object System.Windows.Forms.TableLayoutPanel
-$tlpPolicy.Dock = "Fill"
-$tlpPolicy.ColumnCount = 2
-$tlpPolicy.RowCount = 2
-$tlpPolicy.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-$tlpPolicy.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-$tlpPolicy.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-$tlpPolicy.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-
 $grpLogonOnce = New-Object System.Windows.Forms.GroupBox
 $grpLogonOnce.Text = "Logon Once"
 $grpLogonOnce.Dock = "Fill"
@@ -355,12 +346,41 @@ $grpLogoffEvery = New-Object System.Windows.Forms.GroupBox
 $grpLogoffEvery.Text = "Logoff Every"
 $grpLogoffEvery.Dock = "Fill"
 
-$tlpPolicy.Controls.Add($grpLogonEvery, 0, 0)
-$tlpPolicy.Controls.Add($grpLogonOnce, 0, 1)
-$tlpPolicy.Controls.Add($grpLogoffEvery, 1, 0)
-$tlpPolicy.Controls.Add($grpLogoffOnce, 1, 1)
+$policyTabs = New-Object System.Windows.Forms.TabControl
+$policyTabs.Dock = "Fill"
 
-$policyRoot.Controls.Add($tlpPolicy, 0, 0)
+$tabLogon = New-Object System.Windows.Forms.TabPage
+$tabLogon.Text = "Logon"
+
+$tabLogoff = New-Object System.Windows.Forms.TabPage
+$tabLogoff.Text = "Logoff"
+
+$tlpLogon = New-Object System.Windows.Forms.TableLayoutPanel
+$tlpLogon.Dock = "Fill"
+$tlpLogon.ColumnCount = 1
+$tlpLogon.RowCount = 2
+$tlpLogon.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+$tlpLogon.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+
+$tlpLogoff = New-Object System.Windows.Forms.TableLayoutPanel
+$tlpLogoff.Dock = "Fill"
+$tlpLogoff.ColumnCount = 1
+$tlpLogoff.RowCount = 2
+$tlpLogoff.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+$tlpLogoff.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+
+$tlpLogon.Controls.Add($grpLogonEvery, 0, 0)
+$tlpLogon.Controls.Add($grpLogonOnce, 0, 1)
+$tlpLogoff.Controls.Add($grpLogoffEvery, 0, 0)
+$tlpLogoff.Controls.Add($grpLogoffOnce, 0, 1)
+
+$tabLogon.Controls.Add($tlpLogon)
+$tabLogoff.Controls.Add($tlpLogoff)
+
+$policyTabs.Controls.Add($tabLogon)
+$policyTabs.Controls.Add($tabLogoff)
+
+$policyRoot.Controls.Add($policyTabs, 0, 0)
 
 $policyButtons = New-Object System.Windows.Forms.FlowLayoutPanel
 $policyButtons.FlowDirection = "LeftToRight"
