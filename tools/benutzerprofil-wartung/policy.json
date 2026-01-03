@@ -1,41 +1,78 @@
 ﻿{
-  "logon": {
-    "every": {
-      "enabled": true,
-      "actions": [
-        {
-          "name": "Reset-ProfileCache",
-          "params": { "deep": false },
-          "mode": "Silent"
-        }
-      ]
-    },
-    "once": {
-      "enabled": true,
-      "campaignId": "profil-wartung-q1",
-      "validUntil": "2026-03-31",
-      "actions": [
-        {
-          "name": "Reset-ProfileCache",
-          "params": { "deep": false },
-          "mode": "Silent"
-        }
-      ]
-    }
-  },
-  "logoff": {
-    "every": { "enabled": false, "actions": [] },
-    "once": {
-      "enabled": true,
-      "campaignId": "logoff-cleanup",
-      "validUntil": "2026-03-31",
-      "actions": [
-        {
-          "name": "Cleanup-Temp",
-          "params": { "days": 1 },
-          "mode": "Silent"
-        }
-      ]
-    }
-  }
+    "logon":  {
+                  "every":  {
+                                "enabled":  false,
+                                "actions":  [
+                                                {
+                                                    "name":  "Cleanup-Temp",
+                                                    "mode":  "Silent",
+                                                    "params":  {
+
+                                                               }
+                                                }
+                                            ]
+                            },
+                  "once":  [
+                               {
+                                   "enabled":  false,
+                                   "campaignId":  "Test1",
+                                   "validUntil":  "",
+                                   "targets":  {
+                                                   "users":  [
+
+                                                             ],
+                                                   "groups":  [
+
+                                                              ]
+                                               },
+                                   "actions":  [
+                                                   {
+                                                       "name":  "WorkspaceApp_Reset",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   }
+                                               ]
+                               }
+                           ]
+              },
+    "logoff":  {
+                   "every":  {
+                                 "enabled":  false,
+                                 "actions":  [
+                                                 {
+                                                     "name":  "Reset-ProfileCache",
+                                                     "mode":  "Silent",
+                                                     "params":  {
+
+                                                                }
+                                                 }
+                                             ]
+                             },
+                   "once":  [
+                                {
+                                    "enabled":  false,
+                                    "campaignId":  "Test1",
+                                    "validUntil":  "",
+                                    "targets":  {
+                                                    "users":  [
+
+                                                              ],
+                                                    "groups":  [
+
+                                                               ]
+                                                },
+                                    "actions":  [
+                                                    {
+                                                        "name":  "Teams_Reset",
+                                                        "mode":  "Silent",
+                                                        "params":  {
+
+                                                                   }
+                                                    }
+                                                ]
+                                }
+                            ]
+               }
 }
