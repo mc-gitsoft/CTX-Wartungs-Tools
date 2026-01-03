@@ -14,7 +14,7 @@
                             },
                   "once":  [
                                {
-                                   "enabled":  false,
+                                   "enabled":  true,
                                    "campaignId":  "Test1",
                                    "validUntil":  "",
                                    "targets":  {

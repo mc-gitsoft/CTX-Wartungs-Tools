@@ -494,8 +494,12 @@ $logoffOnceActions.RemoveButton.Add_Click({
     Remove-SelectedActionRow -Grid $logoffOnceActions.Grid -Context "Logoff Once"
 })
 
-function Load-PolicyIntoUi {
-    $policyPath = Join-Path $toolRoot "policy.json"
+function Get-PolicyPath {
+    return (Join-Path $toolRoot "policy.json")
+}
+
+function Read-PolicyJson {
+    $policyPath = Get-PolicyPath
     $policy = Get-DefaultPolicy
 
     if (Test-Path $policyPath) {
@@ -514,6 +518,23 @@ function Load-PolicyIntoUi {
             $policy = Get-DefaultPolicy
         }
     }
+
+    return $policy
+}
+
+function Write-PolicyJson {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Policy
+    )
+
+    $policyPath = Get-PolicyPath
+    $json = $Policy | ConvertTo-Json -Depth 8
+    Set-Content -Path $policyPath -Value $json -Encoding UTF8
+}
+
+function Load-PolicyIntoUI {
+    $policy = Read-PolicyJson
 
     $logonEvery = Normalize-Every $policy.logon.every
     $logoffEvery = Normalize-Every $policy.logoff.every
@@ -611,9 +632,7 @@ function Build-OnceEntry {
     }
 }
 
-function Save-PolicyFromUi {
-    $policyPath = Join-Path $toolRoot "policy.json"
-
+function Save-UIToPolicy {
     $logonEveryActionsList = Get-ActionsFromGrid -Grid $logonEveryActions.Grid
     $logoffEveryActionsList = Get-ActionsFromGrid -Grid $logoffEveryActions.Grid
 
@@ -703,16 +722,12 @@ function Save-PolicyFromUi {
     if ($logonOnceEntry) { $policyOut.logon.once = @($logonOnceEntry) }
     if ($logoffOnceEntry) { $policyOut.logoff.once = @($logoffOnceEntry) }
 
-    $json = $policyOut | ConvertTo-Json -Depth 8
-    Set-Content -Path $policyPath -Value $json -Encoding UTF8
-
-    $lblPolicyStatus.Text = "Policy gespeichert: $policyPath"
-    Write-UiLog "Policy gespeichert" "INFO"
+    return $policyOut
 }
 
 $btnPolicyLoad.Add_Click({
     try {
-        Load-PolicyIntoUi
+        Load-PolicyIntoUI
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Policy konnte nicht geladen werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
@@ -720,7 +735,10 @@ $btnPolicyLoad.Add_Click({
 
 $btnPolicySave.Add_Click({
     try {
-        Save-PolicyFromUi
+        $policyOut = Save-UIToPolicy
+        Write-PolicyJson -Policy $policyOut
+        $lblPolicyStatus.Text = "Policy gespeichert: $(Get-PolicyPath)"
+        Write-UiLog "Policy gespeichert" "INFO"
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Policy konnte nicht gespeichert werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
@@ -934,7 +952,7 @@ $btnOpenLogs.Add_Click({
 
 Load-CustomerIntoUi
 if ($autoLoadPolicy) {
-    Load-PolicyIntoUi
+    Load-PolicyIntoUI
 }
 
 $form.Controls.Add($tabs)
