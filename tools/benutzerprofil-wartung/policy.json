@@ -13,28 +13,7 @@
                                             ]
                             },
                   "once":  [
-                               {
-                                   "enabled":  true,
-                                   "campaignId":  "Test1",
-                                   "validUntil":  "",
-                                   "targets":  {
-                                                   "users":  [
 
-                                                             ],
-                                                   "groups":  [
-
-                                                              ]
-                                               },
-                                   "actions":  [
-                                                   {
-                                                       "name":  "WorkspaceApp_Reset",
-                                                       "mode":  "Silent",
-                                                       "params":  {
-
-                                                                  }
-                                                   }
-                                               ]
-                               }
                            ]
               },
     "logoff":  {
@@ -51,28 +30,7 @@
                                              ]
                              },
                    "once":  [
-                                {
-                                    "enabled":  false,
-                                    "campaignId":  "Test1",
-                                    "validUntil":  "",
-                                    "targets":  {
-                                                    "users":  [
 
-                                                              ],
-                                                    "groups":  [
-
-                                                               ]
-                                                },
-                                    "actions":  [
-                                                    {
-                                                        "name":  "Teams_Reset",
-                                                        "mode":  "Silent",
-                                                        "params":  {
-
-                                                                   }
-                                                    }
-                                                ]
-                                }
                             ]
                }
 }

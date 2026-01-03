@@ -736,6 +736,50 @@ $btnPolicyLoad.Add_Click({
 $btnPolicySave.Add_Click({
     try {
         $policyOut = Save-UIToPolicy
+        $logonOnceItems = @($policyOut.logon.once)
+        if ($logonOnceItems.Count -gt 0 -and $logonOnceItems[0].enabled) {
+            if ([string]::IsNullOrWhiteSpace([string]$logonOnceItems[0].campaignId)) {
+                [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+            if (-not $logonOnceItems[0].actions -or @($logonOnceItems[0].actions).Count -lt 1) {
+                [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+        } elseif ($chkLogonOnceEnabled.Checked) {
+            if ([string]::IsNullOrWhiteSpace([string]$logonOnceCampaign.TextBox.Text)) {
+                [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+            $logonOnceActionsLive = Get-ActionsFromGrid -Grid $logonOnceActions.Grid
+            if (-not $logonOnceActionsLive -or @($logonOnceActionsLive).Count -lt 1) {
+                [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+        }
+
+        $logoffOnceItems = @($policyOut.logoff.once)
+        if ($logoffOnceItems.Count -gt 0 -and $logoffOnceItems[0].enabled) {
+            if ([string]::IsNullOrWhiteSpace([string]$logoffOnceItems[0].campaignId)) {
+                [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+            if (-not $logoffOnceItems[0].actions -or @($logoffOnceItems[0].actions).Count -lt 1) {
+                [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+        } elseif ($chkLogoffOnceEnabled.Checked) {
+            if ([string]::IsNullOrWhiteSpace([string]$logoffOnceCampaign.TextBox.Text)) {
+                [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+            $logoffOnceActionsLive = Get-ActionsFromGrid -Grid $logoffOnceActions.Grid
+            if (-not $logoffOnceActionsLive -or @($logoffOnceActionsLive).Count -lt 1) {
+                [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                return
+            }
+        }
+
         Write-PolicyJson -Policy $policyOut
         $lblPolicyStatus.Text = "Policy gespeichert: $(Get-PolicyPath)"
         Write-UiLog "Policy gespeichert" "INFO"
