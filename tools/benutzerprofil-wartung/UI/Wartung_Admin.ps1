@@ -214,6 +214,67 @@ function Remove-SelectedActionRow {
     $Grid.Refresh()
 }
 
+function New-PocActionGrid {
+    param(
+        [string[]]$ActionNames
+    )
+
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Dock = "Fill"
+    $grid.AllowUserToAddRows = $false
+    $grid.AutoSizeColumnsMode = "Fill"
+    $grid.RowHeadersVisible = $false
+    $grid.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
+    $grid.MultiSelect = $false
+
+    $colEnabled = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $colEnabled.HeaderText = "Enabled"
+
+    $colTrigger = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colTrigger.HeaderText = "Trigger"
+    $colTrigger.DataSource = @("Logon","Logoff","Both")
+
+    $colFrequency = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colFrequency.HeaderText = "Frequency"
+    $colFrequency.DataSource = @("Every","Once")
+
+    $colAction = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colAction.HeaderText = "Action"
+    $colAction.DataSource = $ActionNames
+
+    $colMode = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colMode.HeaderText = "Mode"
+    $colMode.DataSource = @("Silent","Interactive")
+
+    $colParams = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colParams.HeaderText = "Params (JSON)"
+
+    $colCampaignId = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colCampaignId.HeaderText = "CampaignId"
+
+    $colValidUntil = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colValidUntil.HeaderText = "ValidUntil"
+
+    $colTargetsUsers = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colTargetsUsers.HeaderText = "TargetsUsers"
+
+    $colTargetsGroups = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colTargetsGroups.HeaderText = "TargetsGroups"
+
+    [void]$grid.Columns.Add($colEnabled)
+    [void]$grid.Columns.Add($colTrigger)
+    [void]$grid.Columns.Add($colFrequency)
+    [void]$grid.Columns.Add($colAction)
+    [void]$grid.Columns.Add($colMode)
+    [void]$grid.Columns.Add($colParams)
+    [void]$grid.Columns.Add($colCampaignId)
+    [void]$grid.Columns.Add($colValidUntil)
+    [void]$grid.Columns.Add($colTargetsUsers)
+    [void]$grid.Columns.Add($colTargetsGroups)
+
+    return $grid
+}
+
 function Get-ActionsFromGrid {
     param(
         [System.Windows.Forms.DataGridView]$Grid
@@ -355,6 +416,9 @@ $tabLogon.Text = "Logon"
 $tabLogoff = New-Object System.Windows.Forms.TabPage
 $tabLogoff.Text = "Logoff"
 
+$tabActionsPoc = New-Object System.Windows.Forms.TabPage
+$tabActionsPoc.Text = "Actions (PoC)"
+
 $tlpLogon = New-Object System.Windows.Forms.TableLayoutPanel
 $tlpLogon.Dock = "Fill"
 $tlpLogon.ColumnCount = 1
@@ -379,6 +443,7 @@ $tabLogoff.Controls.Add($tlpLogoff)
 
 $policyTabs.Controls.Add($tabLogon)
 $policyTabs.Controls.Add($tabLogoff)
+$policyTabs.Controls.Add($tabActionsPoc)
 
 $policyRoot.Controls.Add($policyTabs, 0, 0)
 
@@ -494,6 +559,40 @@ $logoffEveryPanel.Controls.Add($logoffEveryActions.Panel)
 
 $grpLogoffEvery.Controls.Add($logoffEveryPanel)
 
+$pocPanel = New-Object System.Windows.Forms.Panel
+$pocPanel.Dock = "Fill"
+
+$gridActionsPoc = New-PocActionGrid -ActionNames $actionNames
+$gridActionsPoc.Dock = "Fill"
+
+$pocButtons = New-Object System.Windows.Forms.FlowLayoutPanel
+$pocButtons.FlowDirection = "LeftToRight"
+$pocButtons.WrapContents = $false
+$pocButtons.AutoSize = $true
+$pocButtons.Dock = "Bottom"
+
+$btnPocAdd = New-Object System.Windows.Forms.Button
+$btnPocAdd.Text = "Add"
+$btnPocAdd.AutoSize = $true
+
+$btnPocRemove = New-Object System.Windows.Forms.Button
+$btnPocRemove.Text = "Remove"
+$btnPocRemove.AutoSize = $true
+
+$chkPolicyUsePoc = New-Object System.Windows.Forms.CheckBox
+$chkPolicyUsePoc.Text = "PoC als Quelle verwenden"
+$chkPolicyUsePoc.Checked = $false
+$chkPolicyUsePoc.AutoSize = $true
+
+$pocButtons.Controls.Add($btnPocAdd)
+$pocButtons.Controls.Add($btnPocRemove)
+$pocButtons.Controls.Add($chkPolicyUsePoc)
+
+$pocPanel.Controls.Add($gridActionsPoc)
+$pocPanel.Controls.Add($pocButtons)
+
+$tabActionsPoc.Controls.Add($pocPanel)
+
 $logonEveryActions.AddButton.Add_Click({ Add-ActionRow -Grid $logonEveryActions.Grid -ActionNames $actionNames -UseDefaultAction })
 $logonEveryActions.RemoveButton.Add_Click({
     Remove-SelectedActionRow -Grid $logonEveryActions.Grid -Context "Logon Every"
@@ -512,6 +611,25 @@ $logoffEveryActions.RemoveButton.Add_Click({
 $logoffOnceActions.AddButton.Add_Click({ Add-ActionRow -Grid $logoffOnceActions.Grid -ActionNames $actionNames -UseDefaultAction })
 $logoffOnceActions.RemoveButton.Add_Click({
     Remove-SelectedActionRow -Grid $logoffOnceActions.Grid -Context "Logoff Once"
+})
+
+$btnPocAdd.Add_Click({
+    Add-PocRow -Grid $gridActionsPoc -RowData @{
+        Enabled = $true
+        Trigger = "Logon"
+        Frequency = "Every"
+        Action = if ($actionNames.Count -gt 0) { $actionNames[0] } else { "" }
+        Mode = "Silent"
+        Params = ""
+        CampaignId = ""
+        ValidUntil = ""
+        TargetsUsers = ""
+        TargetsGroups = ""
+    }
+})
+
+$btnPocRemove.Add_Click({
+    Remove-SelectedActionRow -Grid $gridActionsPoc -Context "Actions (PoC)"
 })
 
 function Get-PolicyPath {
@@ -551,6 +669,243 @@ function Write-PolicyJson {
     $policyPath = Get-PolicyPath
     $json = $Policy | ConvertTo-Json -Depth 8
     Set-Content -Path $policyPath -Value $json -Encoding UTF8
+}
+
+function Add-PocRow {
+    param(
+        [System.Windows.Forms.DataGridView]$Grid,
+        [hashtable]$RowData
+    )
+
+    $rowIndex = $Grid.Rows.Add()
+    $row = $Grid.Rows[$rowIndex]
+
+    $row.Cells[0].Value = [bool]$RowData.Enabled
+    $row.Cells[1].Value = $RowData.Trigger
+    $row.Cells[2].Value = $RowData.Frequency
+    $row.Cells[3].Value = $RowData.Action
+    $row.Cells[4].Value = $RowData.Mode
+    $row.Cells[5].Value = $RowData.Params
+    $row.Cells[6].Value = $RowData.CampaignId
+    $row.Cells[7].Value = $RowData.ValidUntil
+    $row.Cells[8].Value = $RowData.TargetsUsers
+    $row.Cells[9].Value = $RowData.TargetsGroups
+}
+
+function Convert-PolicyToPocRows {
+    param(
+        [object]$Policy
+    )
+
+    $gridActionsPoc.DataSource = $null
+    $gridActionsPoc.Rows.Clear()
+
+    $logonEvery = Normalize-Every $Policy.logon.every
+    $logoffEvery = Normalize-Every $Policy.logoff.every
+
+    if ($logonEvery -and $logonEvery.actions) {
+        foreach ($action in @($logonEvery.actions)) {
+            Add-PocRow -Grid $gridActionsPoc -RowData @{
+                Enabled = [bool]$logonEvery.enabled
+                Trigger = "Logon"
+                Frequency = "Every"
+                Action = $action.name
+                Mode = if ($action.mode) { $action.mode } else { "Silent" }
+                Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
+                CampaignId = ""
+                ValidUntil = ""
+                TargetsUsers = ""
+                TargetsGroups = ""
+            }
+        }
+    }
+
+    if ($logoffEvery -and $logoffEvery.actions) {
+        foreach ($action in @($logoffEvery.actions)) {
+            Add-PocRow -Grid $gridActionsPoc -RowData @{
+                Enabled = [bool]$logoffEvery.enabled
+                Trigger = "Logoff"
+                Frequency = "Every"
+                Action = $action.name
+                Mode = if ($action.mode) { $action.mode } else { "Silent" }
+                Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
+                CampaignId = ""
+                ValidUntil = ""
+                TargetsUsers = ""
+                TargetsGroups = ""
+            }
+        }
+    }
+
+    foreach ($entry in @($Policy.logon.once)) {
+        if (-not $entry) { continue }
+        $targets = $entry.targets
+        $users = if ($targets) { @($targets.users) } else { @() }
+        $groups = if ($targets) { @($targets.groups) } else { @() }
+        foreach ($action in @($entry.actions)) {
+            Add-PocRow -Grid $gridActionsPoc -RowData @{
+                Enabled = [bool]$entry.enabled
+                Trigger = "Logon"
+                Frequency = "Once"
+                Action = $action.name
+                Mode = if ($action.mode) { $action.mode } else { "Silent" }
+                Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
+                CampaignId = $entry.campaignId
+                ValidUntil = $entry.validUntil
+                TargetsUsers = ($users -join "`r`n")
+                TargetsGroups = ($groups -join "`r`n")
+            }
+        }
+    }
+
+    foreach ($entry in @($Policy.logoff.once)) {
+        if (-not $entry) { continue }
+        $targets = $entry.targets
+        $users = if ($targets) { @($targets.users) } else { @() }
+        $groups = if ($targets) { @($targets.groups) } else { @() }
+        foreach ($action in @($entry.actions)) {
+            Add-PocRow -Grid $gridActionsPoc -RowData @{
+                Enabled = [bool]$entry.enabled
+                Trigger = "Logoff"
+                Frequency = "Once"
+                Action = $action.name
+                Mode = if ($action.mode) { $action.mode } else { "Silent" }
+                Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
+                CampaignId = $entry.campaignId
+                ValidUntil = $entry.validUntil
+                TargetsUsers = ($users -join "`r`n")
+                TargetsGroups = ($groups -join "`r`n")
+            }
+        }
+    }
+}
+
+function Split-TargetText {
+    param([string]$Text)
+
+    if (-not $Text) { return @() }
+    return $Text -split "[,\r\n]" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+}
+
+function Convert-PocRowsToPolicy {
+    param(
+        [System.Windows.Forms.DataGridViewRowCollection]$Rows,
+        [object]$BasePolicy
+    )
+
+    $policy = $BasePolicy
+    $policy.logon.every.actions = @()
+    $policy.logoff.every.actions = @()
+    $policy.logon.once = @()
+    $policy.logoff.once = @()
+
+    $logonEveryActions = @()
+    $logoffEveryActions = @()
+    $logonOnceGroups = @{}
+    $logoffOnceGroups = @{}
+
+    $rowNumber = 1
+    foreach ($row in $Rows) {
+        if ($row.IsNewRow) { continue }
+        $enabled = [bool]$row.Cells[0].Value
+        if (-not $enabled) { continue }
+
+        $trigger = [string]$row.Cells[1].Value
+        $frequency = [string]$row.Cells[2].Value
+        $actionName = [string]$row.Cells[3].Value
+        $mode = [string]$row.Cells[4].Value
+        $paramsText = [string]$row.Cells[5].Value
+        $campaignId = [string]$row.Cells[6].Value
+        $validUntil = [string]$row.Cells[7].Value
+        $targetsUsersText = [string]$row.Cells[8].Value
+        $targetsGroupsText = [string]$row.Cells[9].Value
+
+        if (-not $actionName) { continue }
+        if (-not $mode) { $mode = "Silent" }
+
+        $params = @{}
+        if ([string]::IsNullOrWhiteSpace($paramsText)) {
+            $params = @{}
+        } else {
+            try {
+                $parsed = $paramsText | ConvertFrom-Json -ErrorAction Stop
+                if ($parsed -is [System.Collections.IDictionary] -or $parsed -is [pscustomobject]) {
+                    $params = $parsed
+                } else {
+                    $params = @{}
+                }
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Ungültiges JSON in Params (Zeile $rowNumber). Bitte korrigieren.", "Validierung", "OK", "Warning") | Out-Null
+                return $null
+            }
+        }
+
+        if ($null -eq $users) { $users = @() }
+        if ($null -eq $groups) { $groups = @() }
+
+        $actionObj = [pscustomobject]@{
+            name = $actionName
+            mode = $mode
+            params = $params
+        }
+
+        if ($frequency -eq "Every") {
+            if ($trigger -eq "Logon" -or $trigger -eq "Both") {
+                $logonEveryActions += $actionObj
+            }
+            if ($trigger -eq "Logoff" -or $trigger -eq "Both") {
+                $logoffEveryActions += $actionObj
+            }
+            $rowNumber += 1
+            continue
+        }
+
+        if ($frequency -ne "Once") {
+            $rowNumber += 1
+            continue
+        }
+
+        $users = Split-TargetText -Text $targetsUsersText
+        $groups = Split-TargetText -Text $targetsGroupsText
+        $key = ($campaignId + "|" + $validUntil + "|" + ($users -join ";") + "|" + ($groups -join ";"))
+
+        if ($trigger -eq "Logon" -or $trigger -eq "Both") {
+            if (-not $logonOnceGroups.ContainsKey($key)) {
+                $logonOnceGroups[$key] = [pscustomobject]@{
+                    enabled = $true
+                    campaignId = $campaignId
+                    validUntil = $validUntil
+                    targets = [pscustomobject]@{ users = $users; groups = $groups }
+                    actions = @()
+                }
+            }
+            $logonOnceGroups[$key].actions += $actionObj
+        }
+
+        if ($trigger -eq "Logoff" -or $trigger -eq "Both") {
+            if (-not $logoffOnceGroups.ContainsKey($key)) {
+                $logoffOnceGroups[$key] = [pscustomobject]@{
+                    enabled = $true
+                    campaignId = $campaignId
+                    validUntil = $validUntil
+                    targets = [pscustomobject]@{ users = $users; groups = $groups }
+                    actions = @()
+                }
+            }
+            $logoffOnceGroups[$key].actions += $actionObj
+        }
+
+        $rowNumber += 1
+    }
+
+    $policy.logon.every.actions = $logonEveryActions
+    $policy.logoff.every.actions = $logoffEveryActions
+    $policy.logon.every.enabled = ($logonEveryActions.Count -gt 0)
+    $policy.logoff.every.enabled = ($logoffEveryActions.Count -gt 0)
+    $policy.logon.once = @($logonOnceGroups.Values)
+    $policy.logoff.once = @($logoffOnceGroups.Values)
+
+    return $policy
 }
 
 function Load-PolicyIntoUI {
@@ -748,6 +1103,7 @@ function Save-UIToPolicy {
 $btnPolicyLoad.Add_Click({
     try {
         Load-PolicyIntoUI
+        Convert-PolicyToPocRows -Policy (Read-PolicyJson)
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Policy konnte nicht geladen werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
@@ -755,48 +1111,54 @@ $btnPolicyLoad.Add_Click({
 
 $btnPolicySave.Add_Click({
     try {
-        $policyOut = Save-UIToPolicy
-        $logonOnceItems = @($policyOut.logon.once)
-        if ($logonOnceItems.Count -gt 0 -and $logonOnceItems[0].enabled) {
-            if ([string]::IsNullOrWhiteSpace([string]$logonOnceItems[0].campaignId)) {
-                [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                return
+        $policyOut = $null
+        if ($chkPolicyUsePoc.Checked) {
+            $policyOut = Convert-PocRowsToPolicy -Rows $gridActionsPoc.Rows -BasePolicy (Get-DefaultPolicy)
+            if ($null -eq $policyOut) { return }
+        } else {
+            $policyOut = Save-UIToPolicy
+            $logonOnceItems = @($policyOut.logon.once)
+            if ($logonOnceItems.Count -gt 0 -and $logonOnceItems[0].enabled) {
+                if ([string]::IsNullOrWhiteSpace([string]$logonOnceItems[0].campaignId)) {
+                    [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
+                if (-not $logonOnceItems[0].actions -or @($logonOnceItems[0].actions).Count -lt 1) {
+                    [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
+            } elseif ($chkLogonOnceEnabled.Checked) {
+                if ([string]::IsNullOrWhiteSpace([string]$logonOnceCampaign.TextBox.Text)) {
+                    [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
+                $logonOnceActionsLive = Get-ActionsFromGrid -Grid $logonOnceActions.Grid
+                if (-not $logonOnceActionsLive -or @($logonOnceActionsLive).Count -lt 1) {
+                    [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
             }
-            if (-not $logonOnceItems[0].actions -or @($logonOnceItems[0].actions).Count -lt 1) {
-                [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                return
-            }
-        } elseif ($chkLogonOnceEnabled.Checked) {
-            if ([string]::IsNullOrWhiteSpace([string]$logonOnceCampaign.TextBox.Text)) {
-                [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                return
-            }
-            $logonOnceActionsLive = Get-ActionsFromGrid -Grid $logonOnceActions.Grid
-            if (-not $logonOnceActionsLive -or @($logonOnceActionsLive).Count -lt 1) {
-                [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                return
-            }
-        }
 
-        $logoffOnceItems = @($policyOut.logoff.once)
-        if ($logoffOnceItems.Count -gt 0 -and $logoffOnceItems[0].enabled) {
-            if ([string]::IsNullOrWhiteSpace([string]$logoffOnceItems[0].campaignId)) {
-                [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                return
-            }
-            if (-not $logoffOnceItems[0].actions -or @($logoffOnceItems[0].actions).Count -lt 1) {
-                [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                return
-            }
-        } elseif ($chkLogoffOnceEnabled.Checked) {
-            if ([string]::IsNullOrWhiteSpace([string]$logoffOnceCampaign.TextBox.Text)) {
-                [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                return
-            }
-            $logoffOnceActionsLive = Get-ActionsFromGrid -Grid $logoffOnceActions.Grid
-            if (-not $logoffOnceActionsLive -or @($logoffOnceActionsLive).Count -lt 1) {
-                [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                return
+            $logoffOnceItems = @($policyOut.logoff.once)
+            if ($logoffOnceItems.Count -gt 0 -and $logoffOnceItems[0].enabled) {
+                if ([string]::IsNullOrWhiteSpace([string]$logoffOnceItems[0].campaignId)) {
+                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
+                if (-not $logoffOnceItems[0].actions -or @($logoffOnceItems[0].actions).Count -lt 1) {
+                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
+            } elseif ($chkLogoffOnceEnabled.Checked) {
+                if ([string]::IsNullOrWhiteSpace([string]$logoffOnceCampaign.TextBox.Text)) {
+                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
+                $logoffOnceActionsLive = Get-ActionsFromGrid -Grid $logoffOnceActions.Grid
+                if (-not $logoffOnceActionsLive -or @($logoffOnceActionsLive).Count -lt 1) {
+                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
+                    return
+                }
             }
         }
 
@@ -1017,6 +1379,7 @@ $btnOpenLogs.Add_Click({
 Load-CustomerIntoUi
 if ($autoLoadPolicy) {
     Load-PolicyIntoUI
+    Convert-PolicyToPocRows -Policy (Read-PolicyJson)
 }
 
 $form.Controls.Add($tabs)

@@ -1,9 +1,15 @@
 ﻿{
     "logon":  {
                   "every":  {
-                                "enabled":  false,
+                                "enabled":  true,
                                 "actions":  [
+                                                {
+                                                    "name":  "Cleanup-Temp",
+                                                    "mode":  "Silent",
+                                                    "params":  {
 
+                                                               }
+                                                }
                                             ]
                             },
                   "once":  [
