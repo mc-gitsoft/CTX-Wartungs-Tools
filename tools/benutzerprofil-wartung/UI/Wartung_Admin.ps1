@@ -364,6 +364,82 @@ function Get-DefaultCustomer {
 
 $autoLoadPolicy = $true
 
+function Get-ToolRootPath {
+    return $toolRoot
+}
+
+function Get-RecentCampaignIdsPath {
+    param(
+        [string]$ToolRoot
+    )
+    return (Join-Path $ToolRoot "recent_campaignIds.json")
+}
+
+function Load-RecentCampaignIds {
+    param(
+        [string]$ToolRoot
+    )
+    $path = Get-RecentCampaignIdsPath -ToolRoot $ToolRoot
+    Write-UiLog ("RecentCampaignIds path: {0}" -f $path) "INFO"
+    if (-not (Test-Path $path)) { return @() }
+    try {
+        $items = Get-Content $path -Raw | ConvertFrom-Json
+        $list = @()
+        if ($items -is [string]) {
+            $value = $items.Trim()
+            if ($value) { $list += $value }
+            return $list
+        }
+        if ($items -is [System.Collections.IEnumerable]) {
+            foreach ($item in $items) {
+                if ($null -eq $item) { continue }
+                $value = [string]$item
+                if ($value.Trim()) { $list += $value.Trim() }
+            }
+            return $list
+        }
+        return @()
+    } catch {
+        Write-UiLog ("RecentCampaignIds: invalid JSON, ignoring file: {0}" -f $path) "WARN"
+        return @()
+    }
+}
+
+function Save-RecentCampaignIds {
+    param(
+        [string]$ToolRoot,
+        [string]$CampaignId
+    )
+
+    $path = Get-RecentCampaignIdsPath -ToolRoot $ToolRoot
+    $newId = if ($CampaignId) { $CampaignId.Trim() } else { "" }
+    if (-not $newId) { return }
+
+    $existing = Load-RecentCampaignIds -ToolRoot $ToolRoot
+    $recentList = @()
+    $recentMap = @{}
+    $recentList += $newId
+    $recentMap[$newId.ToLowerInvariant()] = $true
+
+    foreach ($item in $existing) {
+        $value = [string]$item
+        if (-not $value) { continue }
+        $trimmed = $value.Trim()
+        if (-not $trimmed) { continue }
+        $key = $trimmed.ToLowerInvariant()
+        if ($recentMap.ContainsKey($key)) { continue }
+        $recentList += $trimmed
+        $recentMap[$key] = $true
+    }
+
+    if ($recentList.Count -gt 10) {
+        $recentList = $recentList[0..9]
+    }
+
+    $json = @($recentList) | ConvertTo-Json -Depth 5
+    [System.IO.File]::WriteAllText($path, $json, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Wartung Admin"
 $form.StartPosition = "CenterScreen"
@@ -562,6 +638,12 @@ $grpLogoffEvery.Controls.Add($logoffEveryPanel)
 $pocPanel = New-Object System.Windows.Forms.Panel
 $pocPanel.Dock = "Fill"
 
+$chkPocShowEnabled = New-Object System.Windows.Forms.CheckBox
+$chkPocShowEnabled.Text = "Nur Enabled anzeigen"
+$chkPocShowEnabled.Checked = $false
+$chkPocShowEnabled.AutoSize = $true
+$chkPocShowEnabled.Dock = "Top"
+
 $gridActionsPoc = New-PocActionGrid -ActionNames $actionNames
 $gridActionsPoc.Dock = "Fill"
 
@@ -579,16 +661,36 @@ $btnPocRemove = New-Object System.Windows.Forms.Button
 $btnPocRemove.Text = "Remove"
 $btnPocRemove.AutoSize = $true
 
+$btnPocDuplicate = New-Object System.Windows.Forms.Button
+$btnPocDuplicate.Text = "Duplicate"
+$btnPocDuplicate.AutoSize = $true
+
+$btnPocDisableCampaign = New-Object System.Windows.Forms.Button
+$btnPocDisableCampaign.Text = "Disable Campaign"
+$btnPocDisableCampaign.AutoSize = $true
+
+$btnPocQuickAddOnce = New-Object System.Windows.Forms.Button
+$btnPocQuickAddOnce.Text = "Quick Add Once Campaign..."
+$btnPocQuickAddOnce.AutoSize = $true
+
+$btnPocPreview = New-Object System.Windows.Forms.Button
+$btnPocPreview.Text = "Preview (Was wuerde laufen?)"
+$btnPocPreview.AutoSize = $true
+
 $chkPolicyUsePoc = New-Object System.Windows.Forms.CheckBox
 $chkPolicyUsePoc.Text = "PoC als Quelle verwenden"
-$chkPolicyUsePoc.Checked = $false
+$chkPolicyUsePoc.Checked = $true
 $chkPolicyUsePoc.AutoSize = $true
 
 $pocButtons.Controls.Add($btnPocAdd)
 $pocButtons.Controls.Add($btnPocRemove)
-$pocButtons.Controls.Add($chkPolicyUsePoc)
+$pocButtons.Controls.Add($btnPocDuplicate)
+$pocButtons.Controls.Add($btnPocDisableCampaign)
+$pocButtons.Controls.Add($btnPocQuickAddOnce)
+$pocButtons.Controls.Add($btnPocPreview)
 
 $pocPanel.Controls.Add($gridActionsPoc)
+$pocPanel.Controls.Add($chkPocShowEnabled)
 $pocPanel.Controls.Add($pocButtons)
 
 $tabActionsPoc.Controls.Add($pocPanel)
@@ -620,16 +722,732 @@ $btnPocAdd.Add_Click({
         Frequency = "Every"
         Action = if ($actionNames.Count -gt 0) { $actionNames[0] } else { "" }
         Mode = "Silent"
-        Params = ""
+        Params = "{}"
         CampaignId = ""
         ValidUntil = ""
         TargetsUsers = ""
         TargetsGroups = ""
     }
+    $lastIndex = $gridActionsPoc.Rows.Count - 1
+    if ($lastIndex -ge 0) {
+        $gridActionsPoc.CurrentCell = $gridActionsPoc.Rows[$lastIndex].Cells[3]
+        $gridActionsPoc.BeginEdit($true)
+    }
 })
 
 $btnPocRemove.Add_Click({
     Remove-SelectedActionRow -Grid $gridActionsPoc -Context "Actions (PoC)"
+})
+
+$btnPocDuplicate.Add_Click({
+    if ($gridActionsPoc.SelectedRows.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswählen.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $selectedRow = $gridActionsPoc.SelectedRows[0]
+    if ($selectedRow.IsNewRow) { return }
+
+    $insertIndex = $selectedRow.Index + 1
+    $newIndex = $gridActionsPoc.Rows.Insert($insertIndex, 1)
+    $newRow = $gridActionsPoc.Rows[$insertIndex]
+
+    for ($col = 0; $col -lt $gridActionsPoc.Columns.Count; $col += 1) {
+        $newRow.Cells[$col].Value = $selectedRow.Cells[$col].Value
+    }
+
+    $gridActionsPoc.CurrentCell = $newRow.Cells[3]
+    $gridActionsPoc.BeginEdit($true)
+})
+
+$btnPocDisableCampaign.Add_Click({
+    if ($gridActionsPoc.SelectedRows.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswählen.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $selectedRow = $gridActionsPoc.SelectedRows[0]
+    if ($selectedRow.IsNewRow) { return }
+
+    $campaignId = [string]$selectedRow.Cells[6].Value
+    if ([string]::IsNullOrWhiteSpace($campaignId)) {
+        [System.Windows.Forms.MessageBox]::Show("CampaignId ist leer.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $campaignKey = $campaignId.Trim().ToLowerInvariant()
+    foreach ($row in $gridActionsPoc.Rows) {
+        if ($row.IsNewRow) { continue }
+        $rowCampaign = [string]$row.Cells[6].Value
+        if ($rowCampaign -and $rowCampaign.Trim().ToLowerInvariant() -eq $campaignKey) {
+            $row.Cells[0].Value = $false
+        }
+    }
+
+    $chkPocShowEnabled.Checked = $chkPocShowEnabled.Checked
+})
+
+$btnPocQuickAddOnce.Add_Click({
+    $dialog = New-Object System.Windows.Forms.Form
+    $dialog.Text = "Quick Add Once Campaign"
+    $dialog.StartPosition = "CenterParent"
+    $dialog.Size = New-Object System.Drawing.Size(760, 600)
+    $dialog.FormBorderStyle = "FixedDialog"
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+
+    $dlgPanel = New-Object System.Windows.Forms.TableLayoutPanel
+    $dlgPanel.Dock = "Fill"
+    $dlgPanel.ColumnCount = 2
+    $dlgPanel.RowCount = 7
+    $dlgPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 35)))
+    $dlgPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 65)))
+    for ($i = 0; $i -lt 7; $i += 1) {
+        $dlgPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    }
+
+    $lblCampaign = New-Object System.Windows.Forms.Label
+    $lblCampaign.Text = "CampaignId"
+    $lblCampaign.AutoSize = $true
+    $txtCampaign = New-Object System.Windows.Forms.ComboBox
+    $txtCampaign.Width = 420
+    $txtCampaign.DropDownStyle = "DropDown"
+    $txtCampaign.AutoCompleteMode = "SuggestAppend"
+    $txtCampaign.AutoCompleteSource = "ListItems"
+    $recentCampaignIds = Load-RecentCampaignIds -ToolRoot (Get-ToolRootPath)
+    $txtCampaign.Items.Clear()
+    foreach ($item in $recentCampaignIds) { [void]$txtCampaign.Items.Add($item) }
+
+    $lblTrigger = New-Object System.Windows.Forms.Label
+    $lblTrigger.Text = "Trigger"
+    $lblTrigger.AutoSize = $true
+    $cmbTrigger = New-Object System.Windows.Forms.ComboBox
+    $cmbTrigger.DropDownStyle = "DropDownList"
+    [void]$cmbTrigger.Items.AddRange(@("Logon","Logoff","Both"))
+    $cmbTrigger.SelectedItem = "Logon"
+
+    $lblValidUntil = New-Object System.Windows.Forms.Label
+    $lblValidUntil.Text = "ValidUntil (yyyy-MM-dd)"
+    $lblValidUntil.AutoSize = $true
+    $txtValidUntil = New-Object System.Windows.Forms.TextBox
+    $txtValidUntil.Width = 240
+
+    $lblUsers = New-Object System.Windows.Forms.Label
+    $lblUsers.Text = "Targets Users"
+    $lblUsers.AutoSize = $true
+    $txtUsers = New-Object System.Windows.Forms.TextBox
+    $txtUsers.Multiline = $true
+    $txtUsers.Height = 70
+    $txtUsers.ScrollBars = "Vertical"
+
+    $lblGroups = New-Object System.Windows.Forms.Label
+    $lblGroups.Text = "Targets Groups"
+    $lblGroups.AutoSize = $true
+    $txtGroups = New-Object System.Windows.Forms.TextBox
+    $txtGroups.Multiline = $true
+    $txtGroups.Height = 70
+    $txtGroups.ScrollBars = "Vertical"
+
+    $lblActions = New-Object System.Windows.Forms.Label
+    $lblActions.Text = "Actions"
+    $lblActions.AutoSize = $true
+
+    $lblActionFilter = New-Object System.Windows.Forms.Label
+    $lblActionFilter.Text = "Filter Actions:"
+    $lblActionFilter.AutoSize = $true
+
+    $txtActionFilter = New-Object System.Windows.Forms.TextBox
+    $txtActionFilter.Width = 520
+
+    $lstActions = New-Object System.Windows.Forms.CheckedListBox
+    $lstActions.CheckOnClick = $true
+    $lstActions.Height = 170
+    $lstActions.Anchor = "Left,Right,Top"
+
+    $allActions = @($actionNames)
+    $checkedMap = @{}
+
+    function Refresh-ActionFilterList {
+        $filter = $txtActionFilter.Text.Trim().ToLowerInvariant()
+        $lstActions.BeginUpdate()
+        try {
+            $lstActions.Items.Clear()
+            foreach ($name in $allActions) {
+                if ($filter -and ($name.ToLowerInvariant() -notlike "*$filter*")) { continue }
+                $index = $lstActions.Items.Add($name)
+                if ($checkedMap.ContainsKey($name) -and $checkedMap[$name]) {
+                    $lstActions.SetItemChecked($index, $true)
+                }
+            }
+        } finally {
+            $lstActions.EndUpdate()
+        }
+    }
+
+    $lstActions.Add_ItemCheck({
+        $name = [string]$lstActions.Items[$_.Index]
+        if ($name) {
+            $checkedMap[$name] = ($_.NewValue -eq [System.Windows.Forms.CheckState]::Checked)
+        }
+    })
+
+    $txtActionFilter.Add_TextChanged({
+        Refresh-ActionFilterList
+    })
+
+    $txtActionFilter.Add_KeyDown({
+        if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
+            $txtActionFilter.Text = ""
+            $_.Handled = $true
+        }
+    })
+
+    Refresh-ActionFilterList
+
+    $lblMode = New-Object System.Windows.Forms.Label
+    $lblMode.Text = "Mode"
+    $lblMode.AutoSize = $true
+    $cmbMode = New-Object System.Windows.Forms.ComboBox
+    $cmbMode.DropDownStyle = "DropDownList"
+    [void]$cmbMode.Items.AddRange(@("Silent","Interactive"))
+    $cmbMode.SelectedItem = "Silent"
+
+    $dlgButtons = New-Object System.Windows.Forms.FlowLayoutPanel
+    $dlgButtons.FlowDirection = "RightToLeft"
+    $dlgButtons.WrapContents = $false
+    $dlgButtons.AutoSize = $true
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = "OK"
+    $btnOk.AutoSize = $true
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.AutoSize = $true
+
+    $dlgButtons.Controls.Add($btnOk)
+    $dlgButtons.Controls.Add($btnCancel)
+
+    $dlgPanel.Controls.Add($lblCampaign, 0, 0)
+    $dlgPanel.Controls.Add($txtCampaign, 1, 0)
+    $dlgPanel.Controls.Add($lblTrigger, 0, 1)
+    $dlgPanel.Controls.Add($cmbTrigger, 1, 1)
+    $dlgPanel.Controls.Add($lblValidUntil, 0, 2)
+    $dlgPanel.Controls.Add($txtValidUntil, 1, 2)
+    $dlgPanel.Controls.Add($lblUsers, 0, 3)
+    $dlgPanel.Controls.Add($txtUsers, 1, 3)
+    $dlgPanel.Controls.Add($lblGroups, 0, 4)
+    $dlgPanel.Controls.Add($txtGroups, 1, 4)
+    $actionsPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $actionsPanel.FlowDirection = "TopDown"
+    $actionsPanel.WrapContents = $false
+    $actionsPanel.AutoSize = $true
+    $actionsPanel.Dock = "Fill"
+    $actionsPanel.Controls.Add($lblActionFilter)
+    $actionsPanel.Controls.Add($txtActionFilter)
+    $actionsPanel.Controls.Add($lstActions)
+
+    $dlgPanel.Controls.Add($lblActions, 0, 5)
+    $dlgPanel.Controls.Add($actionsPanel, 1, 5)
+    $dlgPanel.Controls.Add($lblMode, 0, 6)
+    $dlgPanel.Controls.Add($cmbMode, 1, 6)
+
+    $dialog.Controls.Add($dlgPanel)
+    $dialog.Controls.Add($dlgButtons)
+    $dlgButtons.Dock = "Bottom"
+
+    $btnCancel.Add_Click({
+        $dialog.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dialog.Close()
+    })
+
+    $btnOk.Add_Click({
+        $campaignId = $txtCampaign.Text.Trim()
+        if (-not $campaignId) {
+            [System.Windows.Forms.MessageBox]::Show("CampaignId ist erforderlich.", "Validierung", "OK", "Warning") | Out-Null
+            return
+        }
+        if ($lstActions.CheckedItems.Count -lt 1) {
+            [System.Windows.Forms.MessageBox]::Show("Bitte mindestens eine Action auswählen.", "Validierung", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $trigger = [string]$cmbTrigger.SelectedItem
+        $mode = [string]$cmbMode.SelectedItem
+        $validUntil = $txtValidUntil.Text.Trim()
+        $targetsUsers = $txtUsers.Text
+        $targetsGroups = $txtGroups.Text
+
+        $insertedIndices = @()
+
+        foreach ($actionName in $lstActions.CheckedItems) {
+            $triggers = if ($trigger -eq "Both") { @("Logon","Logoff") } else { @($trigger) }
+            foreach ($t in $triggers) {
+                Add-PocRow -Grid $gridActionsPoc -RowData @{
+                    Enabled = $true
+                    Trigger = $t
+                    Frequency = "Once"
+                    Action = [string]$actionName
+                    Mode = $mode
+                    Params = "{}"
+                    CampaignId = $campaignId
+                    ValidUntil = $validUntil
+                    TargetsUsers = $targetsUsers
+                    TargetsGroups = $targetsGroups
+                }
+                $insertedIndices += ($gridActionsPoc.Rows.Count - 1)
+            }
+        }
+
+        Save-RecentCampaignIds -ToolRoot (Get-ToolRootPath) -CampaignId $campaignId
+
+        if ($chkPocShowEnabled.Checked) {
+            $chkPocShowEnabled.Checked = $chkPocShowEnabled.Checked
+        }
+
+        if ($insertedIndices.Count -gt 0) {
+            $firstIndex = $insertedIndices[0]
+            $gridActionsPoc.ClearSelection()
+            $gridActionsPoc.Rows[$firstIndex].Selected = $true
+            $gridActionsPoc.CurrentCell = $gridActionsPoc.Rows[$firstIndex].Cells[3]
+        }
+
+        $dialog.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dialog.Close()
+    })
+
+    [void]$dialog.ShowDialog($form)
+})
+
+function Get-PreviewPolicyFromGrid {
+    param(
+        [System.Windows.Forms.DataGridViewRowCollection]$Rows,
+        [switch]$IncludeDisabled
+    )
+
+    $policy = Get-DefaultPolicy
+    $logonEveryActions = @()
+    $logoffEveryActions = @()
+    $logonOnceGroups = @{}
+    $logoffOnceGroups = @{}
+
+    foreach ($row in $Rows) {
+        if ($row.IsNewRow) { continue }
+        $enabled = [bool]$row.Cells[0].Value
+        if (-not $enabled -and -not $IncludeDisabled) { continue }
+
+        $trigger = [string]$row.Cells[1].Value
+        $frequency = [string]$row.Cells[2].Value
+        $actionName = [string]$row.Cells[3].Value
+        $mode = [string]$row.Cells[4].Value
+        $paramsText = [string]$row.Cells[5].Value
+        $campaignId = [string]$row.Cells[6].Value
+        $validUntil = [string]$row.Cells[7].Value
+        $targetsUsersText = [string]$row.Cells[8].Value
+        $targetsGroupsText = [string]$row.Cells[9].Value
+
+        if (-not $actionName) { continue }
+        if (-not $mode) { $mode = "Silent" }
+
+        $params = @{}
+        if ($paramsText) {
+            try {
+                $parsed = $paramsText | ConvertFrom-Json -ErrorAction Stop
+                if ($parsed -is [System.Collections.IDictionary] -or $parsed -is [pscustomobject]) {
+                    $params = $parsed
+                }
+            } catch {
+                $params = @{}
+            }
+        }
+
+        $actionObj = [pscustomobject]@{
+            name = $actionName
+            mode = $mode
+            params = $params
+            enabled = $enabled
+        }
+
+        if ($frequency -eq "Every") {
+            if ($trigger -eq "Logon" -or $trigger -eq "Both") {
+                $logonEveryActions += $actionObj
+            }
+            if ($trigger -eq "Logoff" -or $trigger -eq "Both") {
+                $logoffEveryActions += $actionObj
+            }
+            continue
+        }
+
+        if ($frequency -ne "Once") { continue }
+
+        $users = Split-TargetText -Text $targetsUsersText
+        $groups = Split-TargetText -Text $targetsGroupsText
+        if ($null -eq $users) { $users = @() }
+        if ($null -eq $groups) { $groups = @() }
+        $key = ($campaignId + "|" + $validUntil + "|" + ($users -join ";") + "|" + ($groups -join ";"))
+
+        if ($trigger -eq "Logon" -or $trigger -eq "Both") {
+            if (-not $logonOnceGroups.ContainsKey($key)) {
+                $logonOnceGroups[$key] = [pscustomobject]@{
+                    enabled = $enabled
+                    campaignId = $campaignId
+                    validUntil = $validUntil
+                    targets = [pscustomobject]@{ users = $users; groups = $groups }
+                    actions = @()
+                }
+            }
+            $logonOnceGroups[$key].actions += $actionObj
+        }
+
+        if ($trigger -eq "Logoff" -or $trigger -eq "Both") {
+            if (-not $logoffOnceGroups.ContainsKey($key)) {
+                $logoffOnceGroups[$key] = [pscustomobject]@{
+                    enabled = $enabled
+                    campaignId = $campaignId
+                    validUntil = $validUntil
+                    targets = [pscustomobject]@{ users = $users; groups = $groups }
+                    actions = @()
+                }
+            }
+            $logoffOnceGroups[$key].actions += $actionObj
+        }
+    }
+
+    $policy.logon.every.actions = $logonEveryActions
+    $policy.logoff.every.actions = $logoffEveryActions
+    $policy.logon.every.enabled = ($logonEveryActions.Count -gt 0)
+    $policy.logoff.every.enabled = ($logoffEveryActions.Count -gt 0)
+    $policy.logon.once = @($logonOnceGroups.Values)
+    $policy.logoff.once = @($logoffOnceGroups.Values)
+
+    return $policy
+}
+
+function Test-UserTargetMatch {
+    param(
+        [string]$UserInput,
+        [object]$Targets
+    )
+
+    if (-not $Targets) { return $true }
+    $users = @($Targets.users)
+    if ($users.Count -eq 0) { return $true }
+
+    $userLower = $UserInput.ToLowerInvariant()
+    $userNameOnly = $UserInput
+    if ($UserInput -like "*\\*") {
+        $parts = $UserInput.Split("\\", 2)
+        if ($parts.Count -eq 2) { $userNameOnly = $parts[1] }
+    }
+    $userNameOnly = $userNameOnly.ToLowerInvariant()
+
+    foreach ($entry in $users) {
+        $value = [string]$entry
+        if (-not $value) { continue }
+        $valueLower = $value.ToLowerInvariant()
+        if ($valueLower -eq $userLower -or $valueLower -eq $userNameOnly) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+$btnPocPreview.Add_Click({
+    $dialog = New-Object System.Windows.Forms.Form
+    $dialog.Text = "Preview"
+    $dialog.StartPosition = "CenterParent"
+    $dialog.Size = New-Object System.Drawing.Size(800, 550)
+    $dialog.FormBorderStyle = "Sizable"
+    $dialog.MaximizeBox = $true
+    $dialog.MinimizeBox = $false
+
+    $tlp = New-Object System.Windows.Forms.TableLayoutPanel
+    $tlp.Dock = "Fill"
+    $tlp.ColumnCount = 2
+    $tlp.RowCount = 3
+    $tlp.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $tlp.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $tlp.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $tlp.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $tlp.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+
+    $lblTrigger = New-Object System.Windows.Forms.Label
+    $lblTrigger.Text = "Trigger"
+    $lblTrigger.AutoSize = $true
+    $cmbTrigger = New-Object System.Windows.Forms.ComboBox
+    $cmbTrigger.DropDownStyle = "DropDownList"
+    [void]$cmbTrigger.Items.AddRange(@("Logon","Logoff"))
+    $cmbTrigger.SelectedItem = "Logon"
+
+    $lblUser = New-Object System.Windows.Forms.Label
+    $lblUser.Text = "User"
+    $lblUser.AutoSize = $true
+    $txtUser = New-Object System.Windows.Forms.TextBox
+    $txtUser.Width = 320
+    $txtUser.Text = if ($env:USERDOMAIN) { "$env:USERDOMAIN\\$env:USERNAME" } else { $env:USERNAME }
+
+    $chkIncludeDisabled = New-Object System.Windows.Forms.CheckBox
+    $chkIncludeDisabled.Text = "Include disabled rows"
+    $chkIncludeDisabled.Checked = $false
+    $chkIncludeDisabled.AutoSize = $true
+
+    $inputsPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $inputsPanel.FlowDirection = "LeftToRight"
+    $inputsPanel.WrapContents = $false
+    $inputsPanel.AutoSize = $true
+    $inputsPanel.Dock = "Fill"
+    $inputsPanel.Controls.Add($lblTrigger)
+    $inputsPanel.Controls.Add($cmbTrigger)
+    $inputsPanel.Controls.Add($lblUser)
+    $inputsPanel.Controls.Add($txtUser)
+    $inputsPanel.Controls.Add($chkIncludeDisabled)
+
+    $txtOutput = New-Object System.Windows.Forms.TextBox
+    $txtOutput.Multiline = $true
+    $txtOutput.ReadOnly = $true
+    $txtOutput.ScrollBars = "Both"
+    $txtOutput.WordWrap = $false
+    $txtOutput.Font = New-Object System.Drawing.Font("Consolas", 10)
+    $txtOutput.Dock = "Fill"
+
+    $btnPreview = New-Object System.Windows.Forms.Button
+    $btnPreview.Text = "Preview"
+    $btnPreview.AutoSize = $true
+
+    $btnDryRun = New-Object System.Windows.Forms.Button
+    $btnDryRun.Text = "Dry-Run Runner"
+    $btnDryRun.AutoSize = $true
+
+    $btnCopy = New-Object System.Windows.Forms.Button
+    $btnCopy.Text = "Copy"
+    $btnCopy.AutoSize = $true
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.AutoSize = $true
+
+    $buttonsLeft = New-Object System.Windows.Forms.FlowLayoutPanel
+    $buttonsLeft.FlowDirection = "LeftToRight"
+    $buttonsLeft.WrapContents = $false
+    $buttonsLeft.AutoSize = $true
+    $buttonsLeft.Controls.Add($btnPreview)
+    $buttonsLeft.Controls.Add($btnDryRun)
+    $buttonsLeft.Dock = "Left"
+
+    $buttonsRight = New-Object System.Windows.Forms.FlowLayoutPanel
+    $buttonsRight.FlowDirection = "RightToLeft"
+    $buttonsRight.WrapContents = $false
+    $buttonsRight.AutoSize = $true
+    $buttonsRight.Controls.Add($btnClose)
+    $buttonsRight.Controls.Add($btnCopy)
+    $buttonsRight.Dock = "Right"
+
+    $buttonsRow = New-Object System.Windows.Forms.TableLayoutPanel
+    $buttonsRow.ColumnCount = 2
+    $buttonsRow.Dock = "Fill"
+    $buttonsRow.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+    $buttonsRow.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+    $buttonsRow.Controls.Add($buttonsLeft, 0, 0)
+    $buttonsRow.Controls.Add($buttonsRight, 1, 0)
+
+    $tlp.Controls.Add($inputsPanel, 0, 0)
+    $tlp.SetColumnSpan($inputsPanel, 2)
+    $tlp.Controls.Add($txtOutput, 0, 1)
+    $tlp.SetColumnSpan($txtOutput, 2)
+    $tlp.Controls.Add($buttonsRow, 0, 2)
+    $tlp.SetColumnSpan($buttonsRow, 2)
+
+    $dialog.Controls.Add($tlp)
+
+    $btnClose.Add_Click({
+        $dialog.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dialog.Close()
+    })
+
+    $btnCopy.Add_Click({
+        [System.Windows.Forms.Clipboard]::SetText($txtOutput.Text)
+        [System.Windows.Forms.MessageBox]::Show("In Zwischenablage kopiert.", "Preview", "OK", "Information") | Out-Null
+    })
+
+    $btnPreview.Add_Click({
+        $trigger = [string]$cmbTrigger.SelectedItem
+        $userInput = $txtUser.Text.Trim()
+        $includeDisabled = $chkIncludeDisabled.Checked
+
+        $policy = Get-PreviewPolicyFromGrid -Rows $gridActionsPoc.Rows -IncludeDisabled:$includeDisabled
+        $section = if ($trigger -eq "Logon") { $policy.logon } else { $policy.logoff }
+
+        $lines = @()
+        $lines += ("Trigger: {0} | User: {1}" -f $trigger, $userInput)
+        $lines += "----------------------------------------"
+        $lines += ""
+        $lines += "[EVERY]"
+
+        if ($section.every.enabled -and $section.every.actions) {
+            foreach ($action in @($section.every.actions)) {
+                $paramsText = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "{}" }
+                $lines += ("  [EVERY] - {0} (mode={1}, params={2})" -f $action.name, $action.mode, $paramsText)
+            }
+        } else {
+            $lines += "  (keine)"
+        }
+
+        $lines += ""
+        $lines += "[ONCE]"
+
+        $stateRoot = Join-Path $env:LOCALAPPDATA ("CTX-Wartungs-Tools\\State\\{0}" -f $toolId)
+        $onceItems = @($section.once)
+        if ($onceItems.Count -eq 0) {
+            $lines += "  (keine)"
+        } else {
+            foreach ($entry in $onceItems) {
+                if (-not $entry) { continue }
+                if (-not $entry.enabled -and -not $includeDisabled) { continue }
+                $campaignId = [string]$entry.campaignId
+                $validUntil = [string]$entry.validUntil
+                $targets = $entry.targets
+
+                $status = "WOULD RUN"
+                $reason = ""
+                if (-not $entry.enabled) {
+                    $status = "SKIP"
+                    $reason = "disabled"
+                }
+
+                if ($validUntil) {
+                    try {
+                        $until = [datetime]::Parse($validUntil)
+                        if ($until.Date -lt (Get-Date).Date) {
+                            $status = "SKIP"
+                            $reason = "expired"
+                        }
+                    } catch {
+                        $status = "SKIP"
+                        $reason = "invalid validUntil"
+                    }
+                }
+
+                $stateFile = Join-Path $stateRoot ("{0}_once_{1}.json" -f $trigger.ToLowerInvariant(), $campaignId)
+                $doneAtText = $null
+                if ($status -eq "WOULD RUN" -and $campaignId -and (Test-Path $stateFile)) {
+                    $status = "SKIP"
+                    $reason = "already done"
+                    try {
+                        $stateJson = Get-Content -Path $stateFile -Raw | ConvertFrom-Json
+                        if ($stateJson.doneAt) {
+                            $doneAtText = [string]$stateJson.doneAt
+                        } elseif ($stateJson.doneAtUtc) {
+                            $doneAtText = [string]$stateJson.doneAtUtc
+                        }
+                    } catch {
+                        $doneAtText = $null
+                    }
+                }
+
+                $targetsMatch = $true
+                $groupsPresent = $false
+                if ($targets) {
+                    $groupsPresent = (@($targets.groups).Count -gt 0)
+                    $targetsMatch = Test-UserTargetMatch -UserInput $userInput -Targets $targets
+                }
+
+                if ($status -eq "WOULD RUN") {
+                    if ($groupsPresent) {
+                        $status = "SKIP"
+                        $reason = "groups not evaluated"
+                    } elseif (-not $targetsMatch) {
+                        $status = "SKIP"
+                        $reason = "targets"
+                    }
+                }
+
+                $statusLine = $status
+                if ($status -eq "SKIP" -and $reason -eq "already done" -and $doneAtText) {
+                    $statusLine = "$status (already done at $doneAtText)"
+                } elseif ($reason) {
+                    $statusLine = "$status ($reason)"
+                }
+
+                $validUntilText = if ($validUntil) { $validUntil } else { "" }
+                $lines += ("  [ONCE] campaignId={0} validUntil={1}" -f $campaignId, $validUntilText)
+                foreach ($action in @($entry.actions)) {
+                    $paramsText = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "{}" }
+                    $lines += ("    [{0}] - {1} (mode={2}, params={3})" -f $statusLine, $action.name, $action.mode, $paramsText)
+                }
+            }
+        }
+
+        $txtOutput.Text = ($lines -join "`r`n")
+    })
+
+    $btnDryRun.Add_Click({
+        $btnPreview.Enabled = $false
+        $btnDryRun.Enabled = $false
+        $btnCopy.Enabled = $false
+        $btnClose.Enabled = $false
+
+        try {
+            $policyOut = Convert-PocRowsToPolicy -Rows $gridActionsPoc.Rows -BasePolicy (Get-DefaultPolicy)
+            if ($null -eq $policyOut) { return }
+            Write-PolicyJson -Policy $policyOut
+
+            $trigger = [string]$cmbTrigger.SelectedItem
+            $runnerPath = Join-Path $toolRoot "Runners\Runner.ps1"
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = "pwsh"
+            $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -Trigger $trigger -PreviewOnly"
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+
+            $process = New-Object System.Diagnostics.Process
+            $process.StartInfo = $psi
+            [void]$process.Start()
+            $stdout = $process.StandardOutput.ReadToEnd()
+            $stderr = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+
+            $logRoot = Join-Path $toolRoot "logs"
+            try {
+                $customer = Get-CustomerConfig
+                if ($customer.logging -and $customer.logging.relativeLogPath) {
+                    $logRoot = Join-Path $toolRoot $customer.logging.relativeLogPath
+                }
+            } catch {
+                $logRoot = Join-Path $toolRoot "logs"
+            }
+            $dateStamp = (Get-Date).ToString("yyyyMMdd")
+            $logPath = Join-Path $logRoot ("$toolId-$dateStamp.log")
+
+            $txtOutput.AppendText("`r`n----------------------------------------`r`n")
+            $txtOutput.AppendText("DRY-RUN Runner output:`r`n")
+            if ($stdout) { $txtOutput.AppendText($stdout + "`r`n") }
+            if ($stderr) { $txtOutput.AppendText($stderr + "`r`n") }
+            $txtOutput.AppendText("Log: $logPath`r`n")
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Dry-run fehlgeschlagen: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
+        } finally {
+            $btnPreview.Enabled = $true
+            $btnDryRun.Enabled = $true
+            $btnCopy.Enabled = $true
+            $btnClose.Enabled = $true
+        }
+    })
+
+    [void]$dialog.ShowDialog($form)
+})
+
+$chkPocShowEnabled.Add_CheckedChanged({
+    foreach ($row in $gridActionsPoc.Rows) {
+        if ($row.IsNewRow) { continue }
+        if ($chkPocShowEnabled.Checked) {
+            $row.Visible = [bool]$row.Cells[0].Value
+        } else {
+            $row.Visible = $true
+        }
+    }
 })
 
 function Get-PolicyPath {
@@ -1111,56 +1929,8 @@ $btnPolicyLoad.Add_Click({
 
 $btnPolicySave.Add_Click({
     try {
-        $policyOut = $null
-        if ($chkPolicyUsePoc.Checked) {
-            $policyOut = Convert-PocRowsToPolicy -Rows $gridActionsPoc.Rows -BasePolicy (Get-DefaultPolicy)
-            if ($null -eq $policyOut) { return }
-        } else {
-            $policyOut = Save-UIToPolicy
-            $logonOnceItems = @($policyOut.logon.once)
-            if ($logonOnceItems.Count -gt 0 -and $logonOnceItems[0].enabled) {
-                if ([string]::IsNullOrWhiteSpace([string]$logonOnceItems[0].campaignId)) {
-                    [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-                if (-not $logonOnceItems[0].actions -or @($logonOnceItems[0].actions).Count -lt 1) {
-                    [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-            } elseif ($chkLogonOnceEnabled.Checked) {
-                if ([string]::IsNullOrWhiteSpace([string]$logonOnceCampaign.TextBox.Text)) {
-                    [System.Windows.Forms.MessageBox]::Show("Logon Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-                $logonOnceActionsLive = Get-ActionsFromGrid -Grid $logonOnceActions.Grid
-                if (-not $logonOnceActionsLive -or @($logonOnceActionsLive).Count -lt 1) {
-                    [System.Windows.Forms.MessageBox]::Show("Logon Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-            }
-
-            $logoffOnceItems = @($policyOut.logoff.once)
-            if ($logoffOnceItems.Count -gt 0 -and $logoffOnceItems[0].enabled) {
-                if ([string]::IsNullOrWhiteSpace([string]$logoffOnceItems[0].campaignId)) {
-                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-                if (-not $logoffOnceItems[0].actions -or @($logoffOnceItems[0].actions).Count -lt 1) {
-                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-            } elseif ($chkLogoffOnceEnabled.Checked) {
-                if ([string]::IsNullOrWhiteSpace([string]$logoffOnceCampaign.TextBox.Text)) {
-                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: CampaignId fehlt", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-                $logoffOnceActionsLive = Get-ActionsFromGrid -Grid $logoffOnceActions.Grid
-                if (-not $logoffOnceActionsLive -or @($logoffOnceActionsLive).Count -lt 1) {
-                    [System.Windows.Forms.MessageBox]::Show("Logoff Once: Mindestens eine Action erforderlich", "Validierung", "OK", "Warning") | Out-Null
-                    return
-                }
-            }
-        }
+        $policyOut = Convert-PocRowsToPolicy -Rows $gridActionsPoc.Rows -BasePolicy (Get-DefaultPolicy)
+        if ($null -eq $policyOut) { return }
 
         Write-PolicyJson -Policy $policyOut
         $lblPolicyStatus.Text = "Policy gespeichert: $(Get-PolicyPath)"
