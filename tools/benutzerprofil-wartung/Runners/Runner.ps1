@@ -1,6 +1,7 @@
 param(
     [ValidateSet("Logon","Logoff")]
-    [string]$Trigger
+    [string]$Trigger,
+    [switch]$PreviewOnly
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
@@ -127,27 +128,45 @@ foreach ($block in $blocks) {
         $actionResults = @()
         foreach ($action in $item.actions) {
             try {
-                Write-Log -Level "INFO" -Message ("Execute action: {0}" -f $action.name) -ToolId $toolId -Trigger $Trigger -Action $action.name
-                $result = Invoke-Action -Name $action.name -Params $action.params -Mode "Silent" -ForceSilent -ToolId $toolId -Trigger $Trigger
-                if ($result.ExitCode -ne 0 -or $result.Error) {
-                    $hadErrors = $true
-                    Write-Log -Level "INFO" -Message ("Action finished with errors: {0}; ExitCode={1}" -f $action.name, $result.ExitCode) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                if ($PreviewOnly) {
+                    Write-Log -Level "INFO" -Message ("PREVIEW: WOULD RUN: {0}" -f $action.name) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    $actionResults += [pscustomobject]@{
+                        Name = $action.name
+                        ExitCode = 0
+                        Error = $null
+                    }
                 } else {
-                    Write-Log -Level "INFO" -Message ("Action finished OK: {0}" -f $action.name) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    Write-Log -Level "INFO" -Message ("Execute action: {0}" -f $action.name) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    $result = Invoke-Action -Name $action.name -Params $action.params -Mode "Silent" -ForceSilent -ToolId $toolId -Trigger $Trigger
+                    if ($result.ExitCode -ne 0 -or $result.Error) {
+                        $hadErrors = $true
+                        Write-Log -Level "INFO" -Message ("Action finished with errors: {0}; ExitCode={1}" -f $action.name, $result.ExitCode) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    } else {
+                        Write-Log -Level "INFO" -Message ("Action finished OK: {0}" -f $action.name) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    }
+                    $actionResults += $result
                 }
-                $actionResults += $result
             } catch {
                 $hadErrors = $true
-                Write-Log -Level "ERROR" -Message $_.Exception.Message -ToolId $toolId -Trigger $Trigger -Action $action.name
-                $actionResults += [pscustomobject]@{
-                    Name = $action.name
-                    ExitCode = 1
-                    Error = $_.Exception.Message
+                if ($PreviewOnly) {
+                    Write-Log -Level "INFO" -Message ("PREVIEW: SKIP (error): {0}" -f $action.name) -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    $actionResults += [pscustomobject]@{
+                        Name = $action.name
+                        ExitCode = 0
+                        Error = $null
+                    }
+                } else {
+                    Write-Log -Level "ERROR" -Message $_.Exception.Message -ToolId $toolId -Trigger $Trigger -Action $action.name
+                    $actionResults += [pscustomobject]@{
+                        Name = $action.name
+                        ExitCode = 1
+                        Error = $_.Exception.Message
+                    }
                 }
             }
         }
 
-        if ($block.Name -eq "once" -and $stateFile -and -not $hadErrors) {
+        if ($block.Name -eq "once" -and $stateFile -and -not $hadErrors -and -not $PreviewOnly) {
             try {
                 Write-Log -Level "INFO" -Message ("Write state: Root={0}; File={1}" -f $stateRoot, $stateFile) -ToolId $toolId -Trigger $Trigger
                 New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
@@ -169,7 +188,7 @@ foreach ($block in $blocks) {
             } catch {
                 Write-Log -Level "ERROR" -Message ("Failed to write state: {0} | {1}" -f $stateFile, $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
             }
-        } elseif ($block.Name -eq "once" -and $stateFile -and $hadErrors) {
+        } elseif ($block.Name -eq "once" -and $stateFile -and $hadErrors -and -not $PreviewOnly) {
             Write-Log -Level "INFO" -Message ("Skip state write due to errors: {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
         }
     }

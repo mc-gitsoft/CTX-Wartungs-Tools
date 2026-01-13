@@ -1,19 +1,84 @@
 ﻿{
     "logon":  {
                   "every":  {
-                                "enabled":  true,
+                                "enabled":  false,
                                 "actions":  [
-                                                {
-                                                    "name":  "Cleanup-Temp",
-                                                    "mode":  "Silent",
-                                                    "params":  {
 
-                                                               }
-                                                }
                                             ]
                             },
                   "once":  [
+                               {
+                                   "enabled":  true,
+                                   "campaignId":  "1234",
+                                   "validUntil":  "",
+                                   "targets":  {
+                                                   "users":  {
 
+                                                             },
+                                                   "groups":  {
+
+                                                              }
+                                               },
+                                   "actions":  [
+                                                   {
+                                                       "name":  "Cleanup-Temp",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   },
+                                                   {
+                                                       "name":  "Reset-ProfileCache",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   }
+                                               ]
+                               },
+                               {
+                                   "enabled":  true,
+                                   "campaignId":  "5643",
+                                   "validUntil":  "",
+                                   "targets":  {
+                                                   "users":  {
+
+                                                             },
+                                                   "groups":  {
+
+                                                              }
+                                               },
+                                   "actions":  [
+                                                   {
+                                                       "name":  "Cleanup-Temp",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   },
+                                                   {
+                                                       "name":  "Google_Chrome_Reset",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   },
+                                                   {
+                                                       "name":  "MS_Edge_Reset",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   },
+                                                   {
+                                                       "name":  "Reset-ProfileCache",
+                                                       "mode":  "Silent",
+                                                       "params":  {
+
+                                                                  }
+                                                   }
+                                               ]
+                               }
                            ]
               },
     "logoff":  {
