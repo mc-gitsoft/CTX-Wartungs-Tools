@@ -677,6 +677,14 @@ $btnPocPreview = New-Object System.Windows.Forms.Button
 $btnPocPreview.Text = "Preview (Was wuerde laufen?)"
 $btnPocPreview.AutoSize = $true
 
+$btnPocParamsCheck = New-Object System.Windows.Forms.Button
+$btnPocParamsCheck.Text = "Params pruefen"
+$btnPocParamsCheck.AutoSize = $true
+
+$btnPocParamsFormat = New-Object System.Windows.Forms.Button
+$btnPocParamsFormat.Text = "Params formatieren"
+$btnPocParamsFormat.AutoSize = $true
+
 $chkPolicyUsePoc = New-Object System.Windows.Forms.CheckBox
 $chkPolicyUsePoc.Text = "PoC als Quelle verwenden"
 $chkPolicyUsePoc.Checked = $true
@@ -688,6 +696,8 @@ $pocButtons.Controls.Add($btnPocDuplicate)
 $pocButtons.Controls.Add($btnPocDisableCampaign)
 $pocButtons.Controls.Add($btnPocQuickAddOnce)
 $pocButtons.Controls.Add($btnPocPreview)
+$pocButtons.Controls.Add($btnPocParamsCheck)
+$pocButtons.Controls.Add($btnPocParamsFormat)
 
 $pocPanel.Controls.Add($gridActionsPoc)
 $pocPanel.Controls.Add($chkPocShowEnabled)
@@ -1017,6 +1027,105 @@ $btnPocQuickAddOnce.Add_Click({
     })
 
     [void]$dialog.ShowDialog($form)
+})
+
+function Get-PocCurrentRow {
+    if ($gridActionsPoc.SelectedRows.Count -gt 0) {
+        return $gridActionsPoc.SelectedRows[0]
+    }
+    if ($gridActionsPoc.CurrentRow) { return $gridActionsPoc.CurrentRow }
+    if ($gridActionsPoc.CurrentCell) { return $gridActionsPoc.Rows[$gridActionsPoc.CurrentCell.RowIndex] }
+    return $null
+}
+
+function Set-PocParamsCellStyle {
+    param(
+        [System.Windows.Forms.DataGridViewCell]$Cell,
+        [switch]$IsValid
+    )
+
+    if ($null -eq $Cell) { return }
+    if ($IsValid) {
+        $Cell.Style.BackColor = $gridActionsPoc.DefaultCellStyle.BackColor
+    } else {
+        $Cell.Style.BackColor = [System.Drawing.Color]::MistyRose
+    }
+}
+
+function Test-PocParamsJson {
+    param(
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @($true, @{}) }
+    try {
+        $parsed = $Text | ConvertFrom-Json -ErrorAction Stop
+        return @($true, $parsed)
+    } catch {
+        return @($false, $_.Exception.Message)
+    }
+}
+
+$btnPocParamsCheck.Add_Click({
+    $row = Get-PocCurrentRow
+    if ($null -eq $row -or $row.IsNewRow) {
+        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswählen.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $cell = $row.Cells[5]
+    $text = [string]$cell.Value
+    $result = Test-PocParamsJson -Text $text
+    $isValid = [bool]$result[0]
+    if ($isValid) {
+        Set-PocParamsCellStyle -Cell $cell -IsValid
+        [System.Windows.Forms.MessageBox]::Show("Params: OK", "Validierung", "OK", "Information") | Out-Null
+        return
+    }
+
+    Set-PocParamsCellStyle -Cell $cell
+    [System.Windows.Forms.MessageBox]::Show("Params: ungültiges JSON. " + [string]$result[1], "Validierung", "OK", "Warning") | Out-Null
+})
+
+$btnPocParamsFormat.Add_Click({
+    $row = Get-PocCurrentRow
+    if ($null -eq $row -or $row.IsNewRow) {
+        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswählen.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $cell = $row.Cells[5]
+    $text = [string]$cell.Value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        $cell.Value = "{}"
+        Set-PocParamsCellStyle -Cell $cell -IsValid
+        return
+    }
+
+    $result = Test-PocParamsJson -Text $text
+    $isValid = [bool]$result[0]
+    if (-not $isValid) {
+        Set-PocParamsCellStyle -Cell $cell
+        [System.Windows.Forms.MessageBox]::Show("Params: ungültiges JSON. " + [string]$result[1], "Validierung", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $formatted = $result[1] | ConvertTo-Json -Depth 10
+    $cell.Value = $formatted
+    Set-PocParamsCellStyle -Cell $cell -IsValid
+})
+
+$gridActionsPoc.Add_CellEndEdit({
+    if ($_.ColumnIndex -ne 5) { return }
+    $cell = $gridActionsPoc.Rows[$_.RowIndex].Cells[$_.ColumnIndex]
+    $text = [string]$cell.Value
+    $result = Test-PocParamsJson -Text $text
+    $isValid = [bool]$result[0]
+    if ($isValid) {
+        Set-PocParamsCellStyle -Cell $cell -IsValid
+    } else {
+        Set-PocParamsCellStyle -Cell $cell
+    }
 })
 
 function Get-PreviewPolicyFromGrid {

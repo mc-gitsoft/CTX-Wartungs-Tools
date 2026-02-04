@@ -1,7 +1,8 @@
 param(
-    [ValidateSet("Logon","Logoff")]
+    [ValidateSet("Logon","Logoff","Offline")]
     [string]$Trigger,
-    [switch]$PreviewOnly
+    [switch]$PreviewOnly,
+    [string]$TargetUser
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
@@ -16,7 +17,42 @@ $section = if ($Trigger -eq "Logon") { $policy.logon } else { $policy.logoff }
 
 $stateRoot = Join-Path $env:LOCALAPPDATA "CTX-Wartungs-Tools\State\$toolId"
 
-Write-Log -Level "INFO" -Message ("Runner start: Trigger={0}; ToolId={1}; ToolRoot={2}; LOCALAPPDATA={3}" -f $Trigger, $toolId, $toolRoot, $env:LOCALAPPDATA) -ToolId $toolId -Trigger $Trigger
+function Resolve-OfflineProfileRoot {
+    param(
+        [Parameter(Mandatory)]
+        [string]$User
+    )
+
+    $sanitized = ($User -replace "\\","_")
+    $invalid = [System.IO.Path]::GetInvalidFileNameChars()
+    foreach ($ch in $invalid) {
+        $sanitized = $sanitized.Replace($ch, "_")
+    }
+    return ("C:\\_OfflineProfiles\\{0}" -f $sanitized)
+}
+
+if ($Trigger -eq "Offline" -and -not $TargetUser) {
+    throw "Offline trigger requires -TargetUser in DOMAIN\\User format."
+}
+
+$contextProfileRoot = $env:USERPROFILE
+if ($Trigger -eq "Offline") {
+    $contextProfileRoot = Resolve-OfflineProfileRoot -User $TargetUser
+    Write-Log -Level "INFO" -Message ("Offline mode (stub): TargetUser={0}; ProfileRoot={1}" -f $TargetUser, $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
+}
+
+$Context = @{
+    Trigger = $Trigger
+    TargetUser = $TargetUser
+    ProfileRoot = $contextProfileRoot
+}
+
+$env:CTX_TRIGGER = $Context.Trigger
+$env:CTX_TARGET_USER = $Context.TargetUser
+$env:CTX_PROFILE_ROOT = $Context.ProfileRoot
+
+Write-Log -Level "INFO" -Message ("Runner start: Trigger={0}; ToolId={1}; ToolRoot={2}; LOCALAPPDATA={3}; TargetUser={4}" -f $Trigger, $toolId, $toolRoot, $env:LOCALAPPDATA, $TargetUser) -ToolId $toolId -Trigger $Trigger
+Write-Log -Level "INFO" -Message ("Context: CTX_TRIGGER={0}; CTX_TARGET_USER={1}; CTX_PROFILE_ROOT={2}" -f $env:CTX_TRIGGER, $env:CTX_TARGET_USER, $env:CTX_PROFILE_ROOT) -ToolId $toolId -Trigger $Trigger
 
 function ConvertTo-Hashtable {
     param(
