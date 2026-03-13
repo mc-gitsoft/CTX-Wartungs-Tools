@@ -2,10 +2,7 @@
 param(
     [ValidateSet('Interactive','Silent')]
     [string]$Mode = 'Interactive',
-    [object]$Params = @{},
-    # Optional: auch Laufzeit-/Sitzungsprozesse (wfica32 etc.) beenden.
-    # WARNUNG: Beendet ggf. aktive Sitzungen dieses Benutzers in dieser Session.
-    [switch]$KillAllCitrixProcesses
+    [object]$Params = @{}
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
@@ -16,225 +13,172 @@ $actionName = 'WorkspaceApp_Reset'
 
 function Write-Log {
     param(
-        [Parameter(Mandatory)]
         [string]$Message,
-        [ValidateSet('INFO','WARN','ERROR')]
-        [string]$Level = 'INFO'
+        [ValidateSet('INFO','WARN','ERROR')] [string]$Level = 'INFO'
     )
-
     WartungsTools.SDK\Write-Log -Level $Level -Message $Message -ToolId $toolId -Action $actionName
 }
 
-if ($Params.ContainsKey('KillAllCitrixProcesses')) {
-    $KillAllCitrixProcesses = [bool]$Params.KillAllCitrixProcesses
-}
-# --------------------------------------------------------------------
-# 1) Helper: Citrix-Prozesse nur in der aktuellen User-Session beenden
-# --------------------------------------------------------------------
-function Stop-CitrixProcessesUserScoped {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string[]]$ProcessNames,
+Write-Log ("Mode={0}" -f $Mode)
+Write-Log "=== Citrix Workspace App Reset gestartet ==="
 
-        [int]$Retries = 10,
-        [int]$DelayMs = 400
+# ==========================
+# Prozesslisten
+# ==========================
+# Basis: fuer Profil-/SelfService-Reset relevante Prozesse
+$baseCitrixProcesses = @(
+    'SelfService','SelfServicePlugin','Receiver','wfcrun32','WebHelper',
+    'AuthManager','redirector','concentr','cdviewer'
+)
+
+# Optional: zusaetzliche HDX-/Sitzungsprozesse (nur mit KillAllCitrixProcesses)
+$extraCitrixProcesses = @(
+    'wfica32','concentr','pnamain','wfshell','ssonsvr'
+)
+
+# ==========================
+# CleanUp.exe ausfuehren
+# ==========================
+function Invoke-CitrixCleanup {
+    Write-Log "Fuehre Citrix CleanUp.exe (cleanUser) aus..."
+
+    $cleanUpCandidates = @(
+        "C:\Program Files (x86)\Citrix\ICA Client\SelfServicePlugin\CleanUp.exe",
+        "C:\Program Files (x86)\Citrix\online plugin\ica client\SelfServicePlugin\CleanUp.exe",
+        "C:\Program Files (x86)\Citrix\ICA Client\CleanUp.exe",
+        "C:\Program Files\Citrix\ICA Client\SelfServicePlugin\CleanUp.exe",
+        "C:\Program Files\Citrix\ICA Client\CleanUp.exe"
     )
 
-    try {
-        $currentSession = (Get-Process -Id $PID).SessionId
-    }
-    catch {
-        Write-Log "Konnte aktuelle SessionId nicht ermitteln, beende Prozesse ohne Session-Filter." 'WARN'
-        $currentSession = $null
+    $cleanUpPath = $null
+    foreach ($candidate in $cleanUpCandidates) {
+        if (Test-Path $candidate) {
+            $cleanUpPath = $candidate
+            break
+        }
     }
 
-    # >>> Konsolidierung: Name-Handling robuster (case-insensitive, unique)
-    $processNamesNormalized = $ProcessNames | ForEach-Object { $_.ToLower() } | Select-Object -Unique
+    # Fallback: unter Citrix-Verzeichnissen suchen
+    if (-not $cleanUpPath) {
+        $roots = @("C:\Program Files (x86)\Citrix", "C:\Program Files\Citrix") | Where-Object { Test-Path $_ }
+        foreach ($r in $roots) {
+            try {
+                $hit = Get-ChildItem -Path $r -Filter "CleanUp.exe" -Recurse -ErrorAction SilentlyContinue |
+                       Select-Object -First 1 -ExpandProperty FullName
+                if ($hit) { $cleanUpPath = $hit; break }
+            } catch { }
+        }
+    }
 
-    for ($i = 1; $i -le $Retries; $i++) {
+    if ($cleanUpPath) {
+        Write-Log ("Verwende CleanUp.exe: {0}" -f $cleanUpPath)
         try {
-            if ($currentSession -ne $null) {
-                # Nur Prozesse in der aktuellen Session
-                Get-Process -ErrorAction SilentlyContinue | Where-Object {
-                    ($processNamesNormalized -contains $_.Name.ToLower()) -and $_.SessionId -eq $currentSession
-                } | Stop-Process -Force -ErrorAction SilentlyContinue
+            & $cleanUpPath -cleanUser -silent
+            $exitCode = $LASTEXITCODE
+            if ($null -eq $exitCode) { $exitCode = 0 }
+            if ($exitCode -eq 0) {
+                Write-Log "CleanUp.exe erfolgreich ausgefuehrt (ExitCode 0)."
+            } else {
+                Write-Log ("CleanUp.exe beendet mit ExitCode {0} (versionsabhaengig)." -f $exitCode) 'WARN'
             }
-            else {
-                # Fallback: kein Session-Filter m�glich
-                Get-Process -ErrorAction SilentlyContinue | Where-Object {
-                    $processNamesNormalized -contains $_.Name.ToLower()
-                } | Stop-Process -Force -ErrorAction SilentlyContinue
-            }
+            Start-Sleep -Seconds 5
+        } catch {
+            Write-Log ("Fehler beim Ausfuehren der CleanUp.exe: {0}" -f $_.Exception.Message) 'ERROR'
         }
-        catch {
-            Write-Log "Fehler beim Beenden von Citrix-Prozessen: $($_.Exception.Message)" 'WARN'
-        }
-
-        Start-Sleep -Milliseconds $DelayMs
+    } else {
+        Write-Log "Keine CleanUp.exe unter den bekannten Pfaden gefunden." 'WARN'
     }
 }
 
-# --------------------------------------------------------------------
-# 2) Prozesslisten definieren
-# --------------------------------------------------------------------
-# Basis: f�r Profil-/SelfService-Reset relevante Prozesse
-$baseCitrixProcesses = @(
-    "SelfService",
-    "SelfServicePlugin",
-    "Receiver",
-    "wfcrun32",
-    "WebHelper",
-    # >>> Erg�nzungen wie gew�nscht
-    "AuthManager",
-    "redirector",
-    "concentr",
-    "cdviewer"
-)
+# ==========================
+# Hauptfunktion
+# ==========================
+function Invoke-WorkspaceReset {
+    [CmdletBinding()]
+    param(
+        [switch]$KillAllCitrixProcesses
+    )
 
-# Optional: zus�tzliche HDX-/Sitzungsprozesse (nur mit -KillAllCitrixProcesses)
-$extraCitrixProcesses = @(
-    "wfica32",          # ICA-Client
-    "concentr",         # Connection Center (bleibt, auch wenn schon in base -> wird dedupliziert)
-    "pnamain",          # pnagent / �lter
-    "wfshell",          # Citrix Shell
-    "ssonsvr"           # Single Sign-On Service im Userkontext
-)
+    Write-Log "Starte Citrix Workspace App Reset..."
 
-if ($KillAllCitrixProcesses) {
-    $targetProcesses = $baseCitrixProcesses + $extraCitrixProcesses
-    Write-Log "Starte aggressiven Prozess-Reset (-KillAllCitrixProcesses aktiv)." 'INFO'
-} else {
-    $targetProcesses = $baseCitrixProcesses
-}
-
-# --------------------------------------------------------------------
-# 3) Prozesse beenden (nur aktuelle Session)
-# --------------------------------------------------------------------
-Write-Log "[1/4] Beende Citrix-Prozesse des aktuellen Benutzers..." 'INFO'
-Stop-CitrixProcessesUserScoped -ProcessNames $targetProcesses
-
-# --------------------------------------------------------------------
-# 4) Benutzerordner bereinigen
-# --------------------------------------------------------------------
-Write-Log "[2/4] L�sche Citrix-Ordner im Benutzerprofil..." 'INFO'
-
-$pathsToDelete = @(
-    "$env:APPDATA\Citrix\SelfService",
-    "$env:APPDATA\Citrix\Receiver",
-    "$env:APPDATA\Citrix\ICA Client",
-    "$env:LOCALAPPDATA\Citrix\SelfService",
-    "$env:LOCALAPPDATA\Citrix\Receiver",
-    "$env:LOCALAPPDATA\Citrix\Workspace"
-)
-
-foreach ($path in $pathsToDelete) {
-    try {
-        if (Test-Path $path) {
-            Write-Log "L�sche Ordner: $path" 'INFO'
-            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
-        }
+    # 1) Prozessliste bestimmen
+    if ($KillAllCitrixProcesses) {
+        $targetProcesses = $baseCitrixProcesses + $extraCitrixProcesses
+        Write-Log "Aggressiver Prozess-Reset (KillAllCitrixProcesses aktiv)."
+    } else {
+        $targetProcesses = $baseCitrixProcesses
     }
-    catch {
-        Write-Log "Fehler beim L�schen von '$path': $($_.Exception.Message)" 'WARN'
-    }
-}
 
-# --------------------------------------------------------------------
-# 5) HKCU-Registry-Reste entfernen
-# --------------------------------------------------------------------
-Write-Log "[3/4] Entferne Citrix-Registry-Eintr�ge (HKCU)..." 'INFO'
+    # 2) Prozesse beenden (SDK)
+    Write-Log "Beende Citrix-Prozesse des aktuellen Benutzers..."
+    $killed = WartungsTools.SDK\Stop-SessionProcesses -ProcessNames $targetProcesses -Retries 10 -DelayMs 400
+    Write-Log ("Citrix-Prozesse beendet ({0} gestoppt)." -f $killed)
 
-$regKeysToDelete = @(
-    "HKCU:\Software\Citrix\Receiver",
-    "HKCU:\Software\Citrix\SelfService",
-    "HKCU:\Software\Citrix\Dazzle",
-    "HKCU:\Software\Citrix\ICA Client",
-    "HKCU:\Software\Citrix\AuthManager"
-)
+    # 3) Benutzerordner bereinigen (SDK)
+    Write-Log "Loesche Citrix-Ordner im Benutzerprofil..."
 
-foreach ($key in $regKeysToDelete) {
-    try {
-        if (Test-Path $key) {
-            Write-Log "L�sche Registry-Schl�ssel: $key" 'INFO'
-            Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-    catch {
-        Write-Log "Fehler beim L�schen von Registry-Schl�ssel '$key': $($_.Exception.Message)" 'WARN'
-    }
-}
+    $pathsToDelete = @(
+        (Join-Path $env:APPDATA      'Citrix\SelfService'),
+        (Join-Path $env:APPDATA      'Citrix\Receiver'),
+        (Join-Path $env:APPDATA      'Citrix\ICA Client'),
+        (Join-Path $env:LOCALAPPDATA 'Citrix\SelfService'),
+        (Join-Path $env:LOCALAPPDATA 'Citrix\Receiver'),
+        (Join-Path $env:LOCALAPPDATA 'Citrix\Workspace')
+    )
 
-# --------------------------------------------------------------------
-# 6) Zum Schluss: CleanUp.exe (cleanUser) ausf�hren
-# --------------------------------------------------------------------
-Write-Log "[4/4] F�hre Citrix CleanUp.exe (cleanUser) aus..." 'INFO'
-
-# >>> Erweiterte Kandidatenliste (32/64-bit + weitere typische Pfade)
-$cleanUpCandidates = @(
-    # bew�hrte Pfade (deine)
-    "C:\Program Files (x86)\Citrix\ICA Client\SelfServicePlugin\CleanUp.exe",
-    "C:\Program Files (x86)\Citrix\online plugin\ica client\SelfServicePlugin\CleanUp.exe",
-
-    # weitere h�ufige Pfade
-    "C:\Program Files (x86)\Citrix\ICA Client\CleanUp.exe",
-    "C:\Program Files\Citrix\ICA Client\SelfServicePlugin\CleanUp.exe",
-    "C:\Program Files\Citrix\ICA Client\CleanUp.exe"
-)
-
-$cleanUpPath = $null
-foreach ($candidate in $cleanUpCandidates) {
-    if (Test-Path $candidate) {
-        $cleanUpPath = $candidate
-        break
-    }
-}
-
-# >>> Optionaler Fallback: wenn nicht gefunden, einmal kurz unter Citrix suchen (sparsam)
-if (-not $cleanUpPath) {
-    $roots = @("C:\Program Files (x86)\Citrix", "C:\Program Files\Citrix") | Where-Object { Test-Path $_ }
-    foreach ($r in $roots) {
-        try {
-            $hit = Get-ChildItem -Path $r -Filter "CleanUp.exe" -Recurse -ErrorAction SilentlyContinue |
-                   Select-Object -First 1 -ExpandProperty FullName
-            if ($hit) { $cleanUpPath = $hit; break }
-        }
-        catch {
-            # keine harte Fehlermeldung n�tig
-        }
-    }
-}
-
-if ($cleanUpPath) {
-    Write-Log "Verwende CleanUp.exe: $cleanUpPath" 'INFO'
-    try {
-        & $cleanUpPath -cleanUser -silent
-
-        # >>> ExitCode auswerten + loggen
-        $exitCode = $LASTEXITCODE
-        if ($exitCode -eq $null) { $exitCode = 0 }  # defensive
-        if ($exitCode -eq 0) {
-            Write-Log "CleanUp.exe erfolgreich ausgef�hrt (ExitCode 0)." 'INFO'
+    foreach ($p in $pathsToDelete) {
+        if (Test-Path $p) {
+            $removed = WartungsTools.SDK\Remove-PathSafe -Path $p
+            if ($removed) { Write-Log ("Geloescht: {0}" -f $p) }
+            else { Write-Log ("Konnte nicht vollstaendig geloescht werden: {0}" -f $p) 'WARN' }
         } else {
-            Write-Log "CleanUp.exe beendet mit ExitCode $exitCode (versionsabh�ngig). Bitte Ergebnis pr�fen." 'WARN'
+            Write-Log ("Nicht vorhanden: {0}" -f $p)
         }
+    }
 
-        Start-Sleep -Seconds 5
+    # 4) HKCU-Registry bereinigen (SDK)
+    Write-Log "Entferne Citrix-Registry-Eintraege (HKCU)..."
+
+    $regKeysToDelete = @(
+        'HKCU:\Software\Citrix\Receiver',
+        'HKCU:\Software\Citrix\SelfService',
+        'HKCU:\Software\Citrix\Dazzle',
+        'HKCU:\Software\Citrix\ICA Client',
+        'HKCU:\Software\Citrix\AuthManager'
+    )
+
+    foreach ($key in $regKeysToDelete) {
+        $removed = WartungsTools.SDK\Clear-RegistryPath -Path $key
+        if ($removed) { Write-Log ("Registry geloescht: {0}" -f $key) }
+        else { Write-Log ("Registry konnte nicht geloescht werden: {0}" -f $key) 'WARN' }
     }
-    catch {
-        Write-Log "Fehler beim Ausf�hren der CleanUp.exe: $($_.Exception.Message)" 'ERROR'
-    }
-} else {
-    Write-Log "Keine CleanUp.exe unter den bekannten Pfaden gefunden." 'WARN'
+
+    # 5) CleanUp.exe ausfuehren
+    Invoke-CitrixCleanup
+
+    Write-Log "Citrix Workspace App Reset abgeschlossen."
+    return @{ ExitCode = 0; Errors = 0; Warnings = 0 }
 }
 
-# Sicherheitshalber noch einmal kurz Prozesse abr�umen
-#Stop-CitrixProcessesUserScoped -ProcessNames $targetProcesses -Retries 3 -DelayMs 300
+# ==========================
+# Ausfuehrung
+# ==========================
+if ($Mode -eq 'Silent') {
+    $killAll = $false
+    if ($Params.ContainsKey('KillAllCitrixProcesses')) { $killAll = [bool]$Params.KillAllCitrixProcesses }
+
+    $result = Invoke-WorkspaceReset -KillAllCitrixProcesses:$killAll
+    exit $result.ExitCode
+}
+
+# ==========================
+# Interactive: Ausfuehrung mit Benutzerausgabe
+# ==========================
+$result = Invoke-WorkspaceReset
 
 Write-Host ""
-Write-Host "Citrix Workspace App wurde im Benutzerprofil so gr�ndlich wie m�glich zur�ckgesetzt." -ForegroundColor Green
+Write-Host "Citrix Workspace App wurde im Benutzerprofil so gruendlich wie moeglich zurueckgesetzt." -ForegroundColor Green
 Write-Host "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
 Write-Host ""
-Write-Log "Citrix Workspace App Reset im Benutzerprofil abgeschlossen." 'INFO'
 
-
+Write-Log "=== Citrix Workspace App Reset beendet ==="
