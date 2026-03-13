@@ -9,11 +9,21 @@ $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot "shared\WartungsTools.SDK.psm1") -Force
 
 $toolManifestPath = Join-Path $toolRoot "tool.json"
-$toolManifest = Get-Content $toolManifestPath -Raw | ConvertFrom-Json
-$toolId = $toolManifest.toolId
+try {
+    $toolManifest = Get-Content $toolManifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
+    $toolId = $toolManifest.toolId
+}
+catch {
+    Write-Warning ("Failed to load tool.json: {0}" -f $_.Exception.Message)
+    exit 1
+}
 
 $policy = Get-PolicyConfig
 $section = if ($Trigger -eq "Logon") { $policy.logon } else { $policy.logoff }
+if (-not $section) {
+    Write-Log -Level "WARN" -Message "No policy section found for trigger: $Trigger" -ToolId $toolId -Trigger $Trigger
+    exit 0
+}
 
 $stateRoot = Join-Path $env:LOCALAPPDATA "CTX-Wartungs-Tools\State\$toolId"
 
@@ -54,43 +64,6 @@ $env:CTX_PROFILE_ROOT = $Context.ProfileRoot
 Write-Log -Level "INFO" -Message ("Runner start: Trigger={0}; ToolId={1}; ToolRoot={2}; LOCALAPPDATA={3}; TargetUser={4}" -f $Trigger, $toolId, $toolRoot, $env:LOCALAPPDATA, $TargetUser) -ToolId $toolId -Trigger $Trigger
 Write-Log -Level "INFO" -Message ("Context: CTX_TRIGGER={0}; CTX_TARGET_USER={1}; CTX_PROFILE_ROOT={2}" -f $env:CTX_TRIGGER, $env:CTX_TARGET_USER, $env:CTX_PROFILE_ROOT) -ToolId $toolId -Trigger $Trigger
 
-function ConvertTo-Hashtable {
-    param(
-        [Parameter(Mandatory)]
-        [object]$InputObject
-    )
-
-    if ($null -eq $InputObject) { return $null }
-
-    if ($InputObject -is [hashtable]) { return $InputObject }
-
-    if ($InputObject -is [System.Collections.IDictionary]) {
-        $ht = @{}
-        foreach ($key in $InputObject.Keys) {
-            $ht[$key] = ConvertTo-Hashtable -InputObject $InputObject[$key]
-        }
-        return $ht
-    }
-
-    if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
-        $list = @()
-        foreach ($item in $InputObject) {
-            $list += ConvertTo-Hashtable -InputObject $item
-        }
-        return $list
-    }
-
-    if ($InputObject -is [pscustomobject]) {
-        $ht = @{}
-        foreach ($prop in $InputObject.PSObject.Properties) {
-            $ht[$prop.Name] = ConvertTo-Hashtable -InputObject $prop.Value
-        }
-        return $ht
-    }
-
-    return $InputObject
-}
-
 function Test-TargetMatch {
     param(
         [object]$Targets
@@ -100,8 +73,9 @@ function Test-TargetMatch {
     $normalized = ConvertTo-Hashtable -InputObject $Targets
     if (-not $normalized) { return $true }
 
-    $user = if ($env:USERDOMAIN) { "$env:USERDOMAIN\\$env:USERNAME" } else { $env:USERNAME }
+    $user = if ($env:USERDOMAIN) { "$env:USERDOMAIN\$env:USERNAME" } else { $env:USERNAME }
 
+    # Check user targets
     $users = $normalized.users
     if ($users) {
         if ($users -isnot [System.Collections.IEnumerable] -or $users -is [string]) {
@@ -109,6 +83,46 @@ function Test-TargetMatch {
         }
 
         if (($users -notcontains $user) -and ($users -notcontains $env:USERNAME)) {
+            return $false
+        }
+    }
+
+    # Check group targets
+    $groups = $normalized.groups
+    if ($groups) {
+        if ($groups -isnot [System.Collections.IEnumerable] -or $groups -is [string]) {
+            $groups = @($groups)
+        }
+
+        $userGroups = @()
+        try {
+            $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+            $userGroups = $identity.Groups | ForEach-Object {
+                try { $_.Translate([Security.Principal.NTAccount]).Value } catch { $null }
+            } | Where-Object { $_ }
+        }
+        catch {
+            Write-Log -Level "WARN" -Message ("Could not resolve group membership: {0}" -f $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
+            return $true
+        }
+
+        $matchFound = $false
+        foreach ($targetGroup in $groups) {
+            if ($userGroups -contains $targetGroup) {
+                $matchFound = $true
+                break
+            }
+            # Also check without domain prefix
+            $shortGroups = $userGroups | ForEach-Object { ($_ -split '\\')[-1] }
+            $shortTarget = ($targetGroup -split '\\')[-1]
+            if ($shortGroups -contains $shortTarget) {
+                $matchFound = $true
+                break
+            }
+        }
+
+        if (-not $matchFound) {
             return $false
         }
     }
@@ -150,7 +164,8 @@ foreach ($block in $blocks) {
         $stateFile = $null
         if ($block.Name -eq "once") {
             if (-not $campaignId) {
-                Write-Log -Level "WARN" -Message "Missing campaignId for once block. Running without state." -ToolId $toolId -Trigger $Trigger
+                Write-Log -Level "ERROR" -Message "Missing campaignId for once block. Skipping to prevent untracked execution." -ToolId $toolId -Trigger $Trigger
+                continue
             } else {
                 $stateFile = Join-Path $stateRoot ("{0}_once_{1}.json" -f $Trigger.ToLowerInvariant(), $campaignId)
                 if (Test-Path $stateFile) {
@@ -206,8 +221,7 @@ foreach ($block in $blocks) {
             try {
                 Write-Log -Level "INFO" -Message ("Write state: Root={0}; File={1}" -f $stateRoot, $stateFile) -ToolId $toolId -Trigger $Trigger
                 New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
-                $stateRootExists = Test-Path $stateRoot
-                Write-Log -Level "INFO" -Message ("State root exists: {0}" -f $stateRootExists) -ToolId $toolId -Trigger $Trigger
+
                 $state = [pscustomobject]@{
                     doneAt = (Get-Date).ToString("s")
                     campaignId = $campaignId
@@ -215,17 +229,26 @@ foreach ($block in $blocks) {
                     actions = $actionResults
                 }
                 $json = $state | ConvertTo-Json -Depth 6
-                Set-Content -Path $stateFile -Value $json -Encoding UTF8
+
+                # Atomic write: write to temp file first, then rename
+                $tempFile = $stateFile + ".tmp"
+                Set-Content -Path $tempFile -Value $json -Encoding UTF8 -ErrorAction Stop
+
                 if (Test-Path $stateFile) {
-                    Write-Log -Level "INFO" -Message ("State write OK: {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
-                } else {
-                    Write-Log -Level "INFO" -Message ("State write FAIL (missing after write): {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
+                    Remove-Item -Path $stateFile -Force -ErrorAction SilentlyContinue
                 }
+                Move-Item -Path $tempFile -Destination $stateFile -Force -ErrorAction Stop
+
+                Write-Log -Level "INFO" -Message ("State write OK: {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
             } catch {
                 Write-Log -Level "ERROR" -Message ("Failed to write state: {0} | {1}" -f $stateFile, $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
+                # Clean up temp file if it exists
+                if (Test-Path ($stateFile + ".tmp")) {
+                    Remove-Item -Path ($stateFile + ".tmp") -Force -ErrorAction SilentlyContinue
+                }
             }
         } elseif ($block.Name -eq "once" -and $stateFile -and $hadErrors -and -not $PreviewOnly) {
-            Write-Log -Level "INFO" -Message ("Skip state write due to errors: {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
+            Write-Log -Level "WARN" -Message ("Skip state write due to errors: {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
         }
     }
 }

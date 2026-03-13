@@ -18,3 +18,22 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem -Recurse -Include *.ps1,*.psm1 | Invoke-ScriptAnalyzer -Severity Error
+
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -Force -Scope CurrentUser -MinimumVersion 5.0
+      - name: Run Pester Tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = './tests/test-results.xml'
+          Invoke-Pester -Configuration $config

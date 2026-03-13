@@ -37,14 +37,22 @@ function Get-PolicyConfig {
     $toolRoot = Get-ToolRoot
     $path = Join-Path $toolRoot "policy.json"
 
-    if (-not (Test-Path $path)) {
-        return [pscustomobject]@{
-            logon  = [pscustomobject]@{ every = @(); once = @() }
-            logoff = [pscustomobject]@{ every = @(); once = @() }
-        }
+    $default = [pscustomobject]@{
+        logon  = [pscustomobject]@{ every = @(); once = @() }
+        logoff = [pscustomobject]@{ every = @(); once = @() }
     }
 
-    return (Get-Content $path -Raw | ConvertFrom-Json)
+    if (-not (Test-Path $path)) {
+        return $default
+    }
+
+    try {
+        return (Get-Content $path -Raw | ConvertFrom-Json)
+    }
+    catch {
+        Write-Warning ("Failed to parse policy.json: {0}" -f $_.Exception.Message)
+        return $default
+    }
 }
 
 function Write-Log {
@@ -129,6 +137,154 @@ function ConvertTo-Hashtable {
     return $InputObject
 }
 
+function Stop-SessionProcesses {
+    <#
+    .SYNOPSIS
+        Beendet Prozesse anhand ihrer Namen in der aktuellen User-Session (RDS/Citrix-safe).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$ProcessNames,
+
+        [int]$Retries = 5,
+        [int]$DelayMs = 400,
+
+        [switch]$UseTaskkillFallback
+    )
+
+    try {
+        $sessionId = (Get-Process -Id $PID).SessionId
+    }
+    catch {
+        $sessionId = $null
+    }
+
+    $normalized = $ProcessNames | ForEach-Object { $_.ToLower() } | Select-Object -Unique
+    $killed = 0
+
+    for ($i = 1; $i -le $Retries; $i++) {
+        try {
+            if ($null -ne $sessionId) {
+                $candidates = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                    ($normalized -contains $_.Name.ToLower()) -and ($_.SessionId -eq $sessionId)
+                }
+            }
+            else {
+                $candidates = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                    $normalized -contains $_.Name.ToLower()
+                }
+            }
+
+            if (-not $candidates) {
+                if ($i -eq 1) { break }
+                continue
+            }
+
+            foreach ($p in $candidates) {
+                try {
+                    Stop-Process -Id $p.Id -Force -ErrorAction Stop
+                    $killed++
+                }
+                catch {
+                    # Ignore per-process errors during retry loop
+                }
+            }
+
+            if ($UseTaskkillFallback) {
+                $still = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                    ($normalized -contains $_.Name.ToLower()) -and
+                    (($null -eq $sessionId) -or ($_.SessionId -eq $sessionId))
+                }
+                foreach ($p in $still) {
+                    try {
+                        cmd.exe /c "taskkill /F /T /PID $($p.Id)" | Out-Null
+                        $killed++
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+
+        Start-Sleep -Milliseconds $DelayMs
+    }
+
+    return $killed
+}
+
+function Remove-PathSafe {
+    <#
+    .SYNOPSIS
+        Robuste Ordner-/Datei-Löschung mit mehrstufigem Fallback (cmd rd, robocopy mirror, Remove-Item).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $true
+    }
+
+    $origLoc = Get-Location
+    try { Set-Location -LiteralPath $env:SystemRoot } catch { }
+
+    try {
+        # 1) cmd rd
+        try { & cmd.exe /d /c "rd /s /q ""$Path"" >nul 2>nul" | Out-Null } catch { }
+        if (-not (Test-Path -LiteralPath $Path)) { return $true }
+
+        # 2) robocopy mirror
+        $empty = Join-Path $env:TEMP ("_empty_" + [guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path $empty -Force | Out-Null
+        try {
+            & robocopy.exe $empty $Path /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP > $null 2> $null
+        }
+        catch { }
+        try { Remove-Item -LiteralPath $empty -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+
+        # 3) Final cleanup
+        try { & cmd.exe /d /c "rd /s /q ""$Path"" >nul 2>nul" | Out-Null } catch { }
+        if (Test-Path -LiteralPath $Path) {
+            try { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+        }
+
+        return (-not (Test-Path -LiteralPath $Path))
+    }
+    catch {
+        return (-not (Test-Path -LiteralPath $Path))
+    }
+    finally {
+        try { Set-Location -LiteralPath $origLoc.Path } catch { }
+    }
+}
+
+function Clear-RegistryPath {
+    <#
+    .SYNOPSIS
+        Entfernt einen HKCU-Registry-Schlüssel rekursiv und sicher.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return $true
+    }
+
+    try {
+        Remove-Item -Path $Path -Recurse -Force -ErrorAction Stop
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Invoke-Action {
     param(
         [Parameter(Mandatory)]
@@ -191,5 +347,5 @@ function Invoke-Action {
     }
 }
 
-Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action
+Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath
 

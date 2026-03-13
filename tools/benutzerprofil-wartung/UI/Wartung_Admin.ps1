@@ -4,6 +4,12 @@ $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $modulePath = Join-Path $toolRoot "shared\WartungsTools.SDK.psm1"
 Import-Module $modulePath -Force
 
+# PolicyManager: Business-Logik fuer Policy/Config-Verwaltung
+$policyManagerPath = Join-Path (Split-Path -Parent $PSCommandPath) "PolicyManager.psm1"
+if (Test-Path $policyManagerPath) {
+    Import-Module $policyManagerPath -Force
+}
+
 $toolManifest = Get-Content (Join-Path $toolRoot "tool.json") -Raw | ConvertFrom-Json
 $toolId = $toolManifest.toolId
 
