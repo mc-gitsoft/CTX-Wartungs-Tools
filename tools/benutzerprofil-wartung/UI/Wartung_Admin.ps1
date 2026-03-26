@@ -35,6 +35,126 @@ function Get-ActionNames {
     }
 }
 
+function Get-ParamsSchema {
+    $schemaPath = Join-Path $toolRoot "Actions\params-schema.json"
+    if (-not (Test-Path $schemaPath)) { return @{} }
+    try {
+        $json = Get-Content -Path $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $ht = @{}
+        foreach ($prop in $json.PSObject.Properties) {
+            $ht[$prop.Name] = $prop.Value.params
+        }
+        return $ht
+    } catch {
+        return @{}
+    }
+}
+
+function Show-ParamsEditorDialog {
+    param(
+        [string]$ActionName,
+        [string]$CurrentJson
+    )
+
+    $schema = Get-ParamsSchema
+    $paramDefs = $null
+    if ($schema.ContainsKey($ActionName)) { $paramDefs = $schema[$ActionName] }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "$ActionName - Parameter"
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.AutoSize = $true
+    $dlg.AutoSizeMode = "GrowAndShrink"
+    $dlg.Padding = New-Object System.Windows.Forms.Padding(15)
+
+    $layout = New-Object System.Windows.Forms.FlowLayoutPanel
+    $layout.FlowDirection = "TopDown"
+    $layout.AutoSize = $true
+    $layout.AutoSizeMode = "GrowAndShrink"
+    $layout.WrapContents = $false
+    $layout.Dock = "Fill"
+    $dlg.Controls.Add($layout)
+
+    if ($null -eq $paramDefs -or $paramDefs.Count -eq 0) {
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = "Keine konfigurierbaren Parameter fuer diese Action."
+        $lbl.AutoSize = $true
+        $lbl.Padding = New-Object System.Windows.Forms.Padding(0, 5, 0, 15)
+        $layout.Controls.Add($lbl)
+
+        $btnOk = New-Object System.Windows.Forms.Button
+        $btnOk.Text = "OK"
+        $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $layout.Controls.Add($btnOk)
+        $dlg.AcceptButton = $btnOk
+        $dlg.CancelButton = $btnOk
+        $dlg.ShowDialog() | Out-Null
+        return $null
+    }
+
+    # Parse current JSON values
+    $currentValues = @{}
+    if (-not [string]::IsNullOrWhiteSpace($CurrentJson)) {
+        try {
+            $parsed = $CurrentJson | ConvertFrom-Json -ErrorAction Stop
+            foreach ($p in $parsed.PSObject.Properties) {
+                $currentValues[$p.Name] = $p.Value
+            }
+        } catch { }
+    }
+
+    # Create checkboxes
+    $checkboxes = @{}
+    foreach ($paramDef in $paramDefs) {
+        $cb = New-Object System.Windows.Forms.CheckBox
+        $cb.Text = $paramDef.label
+        $cb.AutoSize = $true
+        $cb.Padding = New-Object System.Windows.Forms.Padding(0, 3, 0, 3)
+
+        if ($currentValues.ContainsKey($paramDef.name)) {
+            $cb.Checked = [bool]$currentValues[$paramDef.name]
+        } else {
+            $cb.Checked = [bool]$paramDef.default
+        }
+
+        $layout.Controls.Add($cb)
+        $checkboxes[$paramDef.name] = $cb
+    }
+
+    # Buttons
+    $btnPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $btnPanel.FlowDirection = "LeftToRight"
+    $btnPanel.AutoSize = $true
+    $btnPanel.Padding = New-Object System.Windows.Forms.Padding(0, 10, 0, 0)
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = "OK"
+    $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $btnPanel.Controls.Add($btnOk)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Abbrechen"
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $btnPanel.Controls.Add($btnCancel)
+
+    $layout.Controls.Add($btnPanel)
+    $dlg.AcceptButton = $btnOk
+    $dlg.CancelButton = $btnCancel
+
+    $dialogResult = $dlg.ShowDialog()
+    if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+
+    # Build result hashtable
+    $result = [ordered]@{}
+    foreach ($paramDef in $paramDefs) {
+        $result[$paramDef.name] = $checkboxes[$paramDef.name].Checked
+    }
+    return ($result | ConvertTo-Json -Compress)
+}
+
 function New-LabeledTextBox {
     param(
         [string]$LabelText,
@@ -691,6 +811,10 @@ $btnPocParamsFormat = New-Object System.Windows.Forms.Button
 $btnPocParamsFormat.Text = "Params formatieren"
 $btnPocParamsFormat.AutoSize = $true
 
+$btnPocParamsEdit = New-Object System.Windows.Forms.Button
+$btnPocParamsEdit.Text = "Params bearbeiten..."
+$btnPocParamsEdit.AutoSize = $true
+
 $chkPolicyUsePoc = New-Object System.Windows.Forms.CheckBox
 $chkPolicyUsePoc.Text = "PoC als Quelle verwenden"
 $chkPolicyUsePoc.Checked = $true
@@ -702,6 +826,7 @@ $pocButtons.Controls.Add($btnPocDuplicate)
 $pocButtons.Controls.Add($btnPocDisableCampaign)
 $pocButtons.Controls.Add($btnPocQuickAddOnce)
 $pocButtons.Controls.Add($btnPocPreview)
+$pocButtons.Controls.Add($btnPocParamsEdit)
 $pocButtons.Controls.Add($btnPocParamsCheck)
 $pocButtons.Controls.Add($btnPocParamsFormat)
 
@@ -1119,6 +1244,45 @@ $btnPocParamsFormat.Add_Click({
     $formatted = $result[1] | ConvertTo-Json -Depth 10
     $cell.Value = $formatted
     Set-PocParamsCellStyle -Cell $cell -IsValid
+})
+
+$btnPocParamsEdit.Add_Click({
+    $row = Get-PocCurrentRow
+    if ($null -eq $row -or $row.IsNewRow) {
+        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswaehlen.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $actionName = [string]$row.Cells[3].Value
+    if ([string]::IsNullOrWhiteSpace($actionName)) {
+        [System.Windows.Forms.MessageBox]::Show("Bitte zuerst eine Action auswaehlen.", "Hinweis", "OK", "Information") | Out-Null
+        return
+    }
+
+    $cell = $row.Cells[5]
+    $currentJson = [string]$cell.Value
+    $newJson = Show-ParamsEditorDialog -ActionName $actionName -CurrentJson $currentJson
+    if ($null -ne $newJson) {
+        $cell.Value = $newJson
+        Set-PocParamsCellStyle -Cell $cell -IsValid
+    }
+})
+
+$gridActionsPoc.Add_CellDoubleClick({
+    if ($_.ColumnIndex -ne 5) { return }
+    $row = $gridActionsPoc.Rows[$_.RowIndex]
+    if ($row.IsNewRow) { return }
+
+    $actionName = [string]$row.Cells[3].Value
+    if ([string]::IsNullOrWhiteSpace($actionName)) { return }
+
+    $cell = $row.Cells[5]
+    $currentJson = [string]$cell.Value
+    $newJson = Show-ParamsEditorDialog -ActionName $actionName -CurrentJson $currentJson
+    if ($null -ne $newJson) {
+        $cell.Value = $newJson
+        Set-PocParamsCellStyle -Cell $cell -IsValid
+    }
 })
 
 $gridActionsPoc.Add_CellEndEdit({
