@@ -1,0 +1,33 @@
+{
+    "Outlook_Reset": {
+        "params": [
+            { "name": "StandardReset",   "type": "bool", "default": true,  "label": "Standard-Reset: Cache loeschen (empfohlen)" },
+            { "name": "ProfileReset",    "type": "bool", "default": false, "label": "Profil-Reset: Outlook-Profil zuruecksetzen (inkl. Cache)" },
+            { "name": "HardReset",       "type": "bool", "default": false, "label": "Hard-Reset: Alle Outlook Einstellungen zuruecksetzen" },
+            { "name": "RepairWebAddins", "type": "bool", "default": false, "label": "Office-Web-Add-Ins reparieren (Wef/WebView2 Cache loeschen)" }
+        ]
+    },
+    "Google_Chrome_Reset": {
+        "params": [
+            { "name": "BrowserDataReset", "type": "bool", "default": true,  "label": "Browser-Daten loeschen (Cache, Cookies etc.)" },
+            { "name": "HardReset",        "type": "bool", "default": false, "label": "Hard-Reset: Komplettes Chrome-Profil zuruecksetzen" }
+        ]
+    },
+    "MS_Edge_Reset": {
+        "params": [
+            { "name": "BrowserDataReset", "type": "bool", "default": true,  "label": "Browser-Daten loeschen (Cache, Cookies etc.)" },
+            { "name": "HardReset",        "type": "bool", "default": false, "label": "Hard-Reset: Komplettes Edge-Profil zuruecksetzen" }
+        ]
+    },
+    "Teams_Reset": {
+        "params": [
+            { "name": "ClearCache", "type": "bool", "default": true,  "label": "Cache loeschen" },
+            { "name": "HardReset",  "type": "bool", "default": false, "label": "Hard-Reset: Komplettes Teams-Profil zuruecksetzen" }
+        ]
+    },
+    "WorkspaceApp_Reset": {
+        "params": [
+            { "name": "KillAllCitrixProcesses", "type": "bool", "default": false, "label": "Alle Citrix-Prozesse beenden (nicht nur Receiver/Workspace)" }
+        ]
+    }
+}
