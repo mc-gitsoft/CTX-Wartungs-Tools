@@ -5,6 +5,13 @@ param(
     [object]$Params = @{}
 )
 
+<#PSParamsSchema
+[
+    { "name": "BrowserDataReset", "type": "bool", "default": true,  "label": "Browser-Daten loeschen (Cache, Cookies etc.)" },
+    { "name": "HardReset",        "type": "bool", "default": false, "label": "Hard-Reset: Komplettes Chrome-Profil zuruecksetzen" }
+]
+PSParamsSchema#>
+
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
 $Params = ConvertTo-Hashtable -InputObject $Params
