@@ -5,6 +5,13 @@ param(
     [object]$Params = @{}
 )
 
+<#PSParamsSchema
+[
+    { "name": "ClearCache", "type": "bool", "default": true,  "label": "Cache loeschen" },
+    { "name": "HardReset",  "type": "bool", "default": false, "label": "Hard-Reset: Komplettes Teams-Profil zuruecksetzen" }
+]
+PSParamsSchema#>
+
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
 $Params = ConvertTo-Hashtable -InputObject $Params

@@ -5,6 +5,15 @@ param(
     [object]$Params = @{}
 )
 
+<#PSParamsSchema
+[
+    { "name": "StandardReset",   "type": "bool", "default": true,  "label": "Standard-Reset: Cache loeschen (empfohlen)" },
+    { "name": "ProfileReset",    "type": "bool", "default": false, "label": "Profil-Reset: Outlook-Profil zuruecksetzen (inkl. Cache)" },
+    { "name": "HardReset",       "type": "bool", "default": false, "label": "Hard-Reset: Alle Outlook Einstellungen zuruecksetzen" },
+    { "name": "RepairWebAddins", "type": "bool", "default": false, "label": "Office-Web-Add-Ins reparieren (Wef/WebView2 Cache loeschen)" }
+]
+PSParamsSchema#>
+
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
 $Params = ConvertTo-Hashtable -InputObject $Params

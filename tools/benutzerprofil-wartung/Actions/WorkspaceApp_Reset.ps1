@@ -5,6 +5,12 @@ param(
     [object]$Params = @{}
 )
 
+<#PSParamsSchema
+[
+    { "name": "KillAllCitrixProcesses", "type": "bool", "default": false, "label": "Alle Citrix-Prozesse beenden (nicht nur Receiver/Workspace)" }
+]
+PSParamsSchema#>
+
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Import-Module (Join-Path $toolRoot 'shared\WartungsTools.SDK.psm1') -Force
 $Params = ConvertTo-Hashtable -InputObject $Params

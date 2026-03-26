@@ -36,18 +36,20 @@ function Get-ActionNames {
 }
 
 function Get-ParamsSchema {
-    $schemaPath = Join-Path $toolRoot "Actions\params-schema.json"
-    if (-not (Test-Path $schemaPath)) { return @{} }
-    try {
-        $json = Get-Content -Path $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $ht = @{}
-        foreach ($prop in $json.PSObject.Properties) {
-            $ht[$prop.Name] = $prop.Value.params
+    $actionsPath = Join-Path $toolRoot "Actions"
+    if (-not (Test-Path $actionsPath)) { return @{} }
+    $ht = @{}
+    foreach ($file in Get-ChildItem -Path $actionsPath -Filter "*.ps1") {
+        $content = Get-Content -Path $file.FullName -Raw -Encoding UTF8
+        if ($content -match '(?s)<#PSParamsSchema\s*(.+?)\s*PSParamsSchema#>') {
+            try {
+                $params = $Matches[1] | ConvertFrom-Json -ErrorAction Stop
+                $name = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+                $ht[$name] = $params
+            } catch { }
         }
-        return $ht
-    } catch {
-        return @{}
     }
+    return $ht
 }
 
 function Show-ParamsEditorDialog {
