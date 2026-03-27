@@ -597,14 +597,6 @@ $btnPocPreview = New-Object System.Windows.Forms.Button
 $btnPocPreview.Text = "Preview (Was wuerde laufen?)"
 $btnPocPreview.AutoSize = $true
 
-$btnPocParamsCheck = New-Object System.Windows.Forms.Button
-$btnPocParamsCheck.Text = "Params pruefen"
-$btnPocParamsCheck.AutoSize = $true
-
-$btnPocParamsFormat = New-Object System.Windows.Forms.Button
-$btnPocParamsFormat.Text = "Params formatieren"
-$btnPocParamsFormat.AutoSize = $true
-
 $btnPocParamsEdit = New-Object System.Windows.Forms.Button
 $btnPocParamsEdit.Text = "Params bearbeiten..."
 $btnPocParamsEdit.AutoSize = $true
@@ -616,8 +608,6 @@ $pocButtons.Controls.Add($btnPocDisableCampaign)
 $pocButtons.Controls.Add($btnPocQuickAddOnce)
 $pocButtons.Controls.Add($btnPocPreview)
 $pocButtons.Controls.Add($btnPocParamsEdit)
-$pocButtons.Controls.Add($btnPocParamsCheck)
-$pocButtons.Controls.Add($btnPocParamsFormat)
 
 $pocPanel.Controls.Add($gridActionsPoc)
 $pocPanel.Controls.Add($chkPocShowEnabled)
@@ -965,55 +955,6 @@ function Test-PocParamsJson {
         return @($false, $_.Exception.Message)
     }
 }
-
-$btnPocParamsCheck.Add_Click({
-    $row = Get-PocCurrentRow
-    if ($null -eq $row -or $row.IsNewRow) {
-        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswählen.", "Hinweis", "OK", "Information") | Out-Null
-        return
-    }
-
-    $cell = $row.Cells[5]
-    $text = [string]$cell.Value
-    $result = Test-PocParamsJson -Text $text
-    $isValid = [bool]$result[0]
-    if ($isValid) {
-        Set-PocParamsCellStyle -Cell $cell -IsValid
-        [System.Windows.Forms.MessageBox]::Show("Params: OK", "Validierung", "OK", "Information") | Out-Null
-        return
-    }
-
-    Set-PocParamsCellStyle -Cell $cell
-    [System.Windows.Forms.MessageBox]::Show("Params: ungültiges JSON. " + [string]$result[1], "Validierung", "OK", "Warning") | Out-Null
-})
-
-$btnPocParamsFormat.Add_Click({
-    $row = Get-PocCurrentRow
-    if ($null -eq $row -or $row.IsNewRow) {
-        [System.Windows.Forms.MessageBox]::Show("Bitte eine Zeile auswählen.", "Hinweis", "OK", "Information") | Out-Null
-        return
-    }
-
-    $cell = $row.Cells[5]
-    $text = [string]$cell.Value
-    if ([string]::IsNullOrWhiteSpace($text)) {
-        $cell.Value = "{}"
-        Set-PocParamsCellStyle -Cell $cell -IsValid
-        return
-    }
-
-    $result = Test-PocParamsJson -Text $text
-    $isValid = [bool]$result[0]
-    if (-not $isValid) {
-        Set-PocParamsCellStyle -Cell $cell
-        [System.Windows.Forms.MessageBox]::Show("Params: ungültiges JSON. " + [string]$result[1], "Validierung", "OK", "Warning") | Out-Null
-        return
-    }
-
-    $formatted = $result[1] | ConvertTo-Json -Depth 10
-    $cell.Value = $formatted
-    Set-PocParamsCellStyle -Cell $cell -IsValid
-})
 
 $btnPocParamsEdit.Add_Click({
     $row = Get-PocCurrentRow
