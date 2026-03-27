@@ -281,22 +281,33 @@ function Clear-RegistryPath {
     # Offline mode: load NTUSER.DAT, remap path, operate, unload
     if ($env:CTX_OFFLINE -eq "1" -and $env:CTX_PROFILE_ROOT -and $Path -match '^HKCU:\\') {
         $ntUserDat = Join-Path $env:CTX_PROFILE_ROOT "NTUSER.DAT"
-        if (-not (Test-Path $ntUserDat)) { return $true }
+        if (-not (Test-Path $ntUserDat)) {
+            Write-Warning "NTUSER.DAT nicht gefunden: $ntUserDat"
+            return $false
+        }
 
         $hiveKey = "HKU\CTX_OFFLINE_HIVE"
         $regPath = $Path -replace '^HKCU:\\', ''
 
         try {
-            & reg load $hiveKey $ntUserDat 2>$null
+            # Hive laden
+            $loadResult = & reg load $hiveKey $ntUserDat 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "reg load fehlgeschlagen: $loadResult"
+                return $false
+            }
+
             $offlinePath = "Registry::HKEY_USERS\CTX_OFFLINE_HIVE\$regPath"
             if (Test-Path $offlinePath) {
                 Remove-Item -Path $offlinePath -Recurse -Force -ErrorAction Stop
             }
             return $true
         } catch {
+            Write-Warning ("Registry-Offline-Fehler: {0}" -f $_.Exception.Message)
             return $false
         } finally {
             [gc]::Collect()
+            Start-Sleep -Milliseconds 200
             & reg unload $hiveKey 2>$null
         }
     }
