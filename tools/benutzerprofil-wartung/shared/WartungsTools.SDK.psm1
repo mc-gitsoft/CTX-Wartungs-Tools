@@ -460,10 +460,33 @@ function Resolve-OfflinePaths {
 
     if ($env:CTX_ODFC_ROOT) {
         $subDir = if ($Base -eq "Roaming") { "AppData\Roaming" } else { "AppData\Local" }
-        $odfcPath1 = Join-Path $env:CTX_ODFC_ROOT "ODFC\$subDir\$RelativePath"
-        $odfcPath2 = Join-Path $env:CTX_ODFC_ROOT "$subDir\$RelativePath"
-        if (Test-Path $odfcPath1) { $paths += $odfcPath1 }
-        elseif (Test-Path $odfcPath2) { $paths += $odfcPath2 }
+        # Known ODFC container structures (ordered by likelihood)
+        $candidates = @(
+            (Join-Path $env:CTX_ODFC_ROOT "Profile\$subDir\$RelativePath"),
+            (Join-Path $env:CTX_ODFC_ROOT "ODFC\$subDir\$RelativePath"),
+            (Join-Path $env:CTX_ODFC_ROOT "$subDir\$RelativePath")
+        )
+        $found = $false
+        foreach ($c in $candidates) {
+            if (Test-Path $c) {
+                $paths += $c
+                $found = $true
+                break
+            }
+        }
+        # Fallback: scan top-level dirs for AppData structure
+        if (-not $found) {
+            try {
+                $topDirs = Get-ChildItem -LiteralPath $env:CTX_ODFC_ROOT -Directory -ErrorAction SilentlyContinue
+                foreach ($d in $topDirs) {
+                    $candidate = Join-Path $d.FullName "$subDir\$RelativePath"
+                    if (Test-Path $candidate) {
+                        $paths += $candidate
+                        break
+                    }
+                }
+            } catch { }
+        }
     }
 
     return $paths
