@@ -376,48 +376,6 @@ function Invoke-Action {
     }
 }
 
-function Resolve-FSLogixProfilePath {
-    <#
-    .SYNOPSIS
-        Loest den FSLogix-Profil-VHD(X)-Pfad fuer einen Benutzer auf.
-    .DESCRIPTION
-        FSLogix speichert Profile als VHD(X) unter:
-        <ProfileShare>\<UserSID>_<Username>\Profile_<Username>.VHD(X)
-        Alternativ: <ProfileShare>\<Username>\Profile_<Username>.VHD(X)
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$User,
-
-        [Parameter(Mandatory)]
-        [string]$ProfileShare
-    )
-
-    if (-not (Test-Path $ProfileShare)) { return $null }
-
-    $username = if ($User -match '\\(.+)$') { $Matches[1] } else { $User }
-
-    # Try SID-based folder pattern first (SID_Username)
-    $sidFolders = Get-ChildItem -Path $ProfileShare -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match ("_" + [regex]::Escape($username) + "$") }
-
-    $searchDirs = @()
-    if ($sidFolders) { $searchDirs += $sidFolders.FullName }
-    # Also try plain username folder
-    $plainDir = Join-Path $ProfileShare $username
-    if (Test-Path $plainDir) { $searchDirs += $plainDir }
-
-    foreach ($dir in $searchDirs) {
-        $vhdx = Get-ChildItem -Path $dir -Filter "Profile_*.VHDX" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($vhdx) { return $vhdx.FullName }
-        $vhd = Get-ChildItem -Path $dir -Filter "Profile_*.VHD" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($vhd) { return $vhd.FullName }
-    }
-
-    return $null
-}
-
 function Mount-FSLogixVHD {
     <#
     .SYNOPSIS
@@ -476,5 +434,5 @@ function Dismount-FSLogixVHD {
     }
 }
 
-Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Resolve-FSLogixProfilePath, Mount-FSLogixVHD, Dismount-FSLogixVHD
+Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Mount-FSLogixVHD, Dismount-FSLogixVHD
 
