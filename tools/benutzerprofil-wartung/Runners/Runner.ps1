@@ -2,7 +2,8 @@ param(
     [ValidateSet("Logon","Logoff","Offline")]
     [string]$Trigger,
     [switch]$PreviewOnly,
-    [string]$TargetUser
+    [string]$TargetUser,
+    [string]$VhdPath
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
@@ -60,27 +61,23 @@ if ($Trigger -eq "Offline") {
 
     $mountedVhd = $null
 
-    # Try FSLogix first if configured
-    if ($customerConfig.fslogix -and $customerConfig.fslogix.enabled -and $customerConfig.fslogix.profileShare) {
-        $vhdPath = Resolve-FSLogixProfilePath -User $TargetUser -ProfileShare $customerConfig.fslogix.profileShare
-        if ($vhdPath) {
-            Write-Log -Level "INFO" -Message ("FSLogix VHD found: {0}" -f $vhdPath) -ToolId $toolId -Trigger $Trigger
-            try {
-                $mountPath = Mount-FSLogixVHD -VhdPath $vhdPath
-                $contextProfileRoot = Join-Path $mountPath "Profile"
-                $mountedVhd = $vhdPath
-                Write-Log -Level "INFO" -Message ("FSLogix VHD mounted: {0} -> {1}" -f $vhdPath, $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
-            } catch {
-                Write-Log -Level "ERROR" -Message ("FSLogix mount failed: {0}" -f $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
-                exit 1
-            }
-        } else {
-            Write-Log -Level "WARN" -Message ("FSLogix VHD not found for user: {0}" -f $TargetUser) -ToolId $toolId -Trigger $Trigger
+    if ($VhdPath) {
+        # Mount directly specified VHD(X) container
+        if (-not (Test-Path $VhdPath)) {
+            Write-Log -Level "ERROR" -Message ("VHD not found: {0}" -f $VhdPath) -ToolId $toolId -Trigger $Trigger
+            exit 1
         }
-    }
-
-    # Fallback to static offline profile directory
-    if (-not $mountedVhd) {
+        try {
+            $mountPath = Mount-FSLogixVHD -VhdPath $VhdPath
+            $contextProfileRoot = Join-Path $mountPath "Profile"
+            $mountedVhd = $VhdPath
+            Write-Log -Level "INFO" -Message ("VHD mounted: {0} -> {1}" -f $VhdPath, $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
+        } catch {
+            Write-Log -Level "ERROR" -Message ("VHD mount failed: {0}" -f $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
+            exit 1
+        }
+    } else {
+        # Fallback to static offline profile directory
         $contextProfileRoot = Resolve-OfflineProfileRoot -User $TargetUser
         if (-not (Test-Path $contextProfileRoot)) {
             Write-Log -Level "ERROR" -Message ("Offline profile root not found: {0}" -f $contextProfileRoot) -ToolId $toolId -Trigger $Trigger

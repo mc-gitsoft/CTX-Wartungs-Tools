@@ -407,7 +407,7 @@ function Get-DefaultCustomer {
     return [pscustomobject]@{
         customer = [pscustomobject]@{ name = "" }
         paths = [pscustomobject]@{ repoRoot = "" }
-        fslogix = [pscustomobject]@{ enabled = $false; profileShare = ""; officeContainerShare = "" }
+        fslogix = [pscustomobject]@{ enabled = $false }
         branding = [pscustomobject]@{ windowTitle = "Wartung Admin"; supportText = "" }
         logging = [pscustomobject]@{ relativeLogPath = "logs"; adminLogRoot = "" }
         flags = [pscustomobject]@{ allowOffline = $true; allowLogoffRunner = $true }
@@ -1781,9 +1781,6 @@ $cfgWindowTitle = New-LabeledTextBox -LabelText "Window Title" -TextWidth 260
 $cfgSupportText = New-LabeledTextBox -LabelText "Support Text" -TextWidth 260
 $cfgRelativeLog = New-LabeledTextBox -LabelText "Relative Log Path" -TextWidth 180
 $cfgAdminLogRoot = New-LabeledTextBox -LabelText "Admin Log Root" -TextWidth 260
-$cfgFslogixProfile = New-LabeledTextBox -LabelText "FSLogix ProfileShare" -TextWidth 260
-$cfgFslogixOffice = New-LabeledTextBox -LabelText "FSLogix OfficeContainerShare" -TextWidth 260
-
 $chkAllowOffline = New-Object System.Windows.Forms.CheckBox
 $chkAllowOffline.Text = "Allow Offline"
 
@@ -1814,10 +1811,15 @@ $btnOpenLogs = New-Object System.Windows.Forms.Button
 $btnOpenLogs.Text = "Logs-Ordner oeffnen"
 $btnOpenLogs.AutoSize = $true
 
+$btnOfflineRun = New-Object System.Windows.Forms.Button
+$btnOfflineRun.Text = "Offline ausfuehren..."
+$btnOfflineRun.AutoSize = $true
+
 $cfgButtons.Controls.Add($btnConfigNew)
 $cfgButtons.Controls.Add($btnConfigSave)
 $cfgButtons.Controls.Add($btnConfigOpen)
 $cfgButtons.Controls.Add($btnOpenLogs)
+$cfgButtons.Controls.Add($btnOfflineRun)
 
 $lblConfigStatus = New-Object System.Windows.Forms.Label
 $lblConfigStatus.AutoSize = $true
@@ -1833,8 +1835,6 @@ $cfgPanel.Controls.Add($cfgAdminLogRoot.Panel)
 $cfgPanel.Controls.Add($chkAllowOffline)
 $cfgPanel.Controls.Add($chkAllowLogoff)
 $cfgPanel.Controls.Add($chkFslogixEnabled)
-$cfgPanel.Controls.Add($cfgFslogixProfile.Panel)
-$cfgPanel.Controls.Add($cfgFslogixOffice.Panel)
 $cfgPanel.Controls.Add($cfgButtons)
 $cfgPanel.Controls.Add($lblConfigStatus)
 
@@ -1852,8 +1852,6 @@ function Apply-CustomerToUi {
     $chkAllowOffline.Checked = [bool]$Customer.flags.allowOffline
     $chkAllowLogoff.Checked = [bool]$Customer.flags.allowLogoffRunner
     $chkFslogixEnabled.Checked = [bool]$Customer.fslogix.enabled
-    $cfgFslogixProfile.TextBox.Text = [string]$Customer.fslogix.profileShare
-    $cfgFslogixOffice.TextBox.Text = [string]$Customer.fslogix.officeContainerShare
 }
 
 function Load-CustomerIntoUi {
@@ -1907,8 +1905,6 @@ function Save-CustomerFromUi {
         paths = [pscustomobject]@{ repoRoot = $cfgRepoRoot.TextBox.Text.Trim() }
         fslogix = [pscustomobject]@{
             enabled = $chkFslogixEnabled.Checked
-            profileShare = $cfgFslogixProfile.TextBox.Text.Trim()
-            officeContainerShare = $cfgFslogixOffice.TextBox.Text.Trim()
         }
         branding = [pscustomobject]@{
             windowTitle = $title
@@ -1949,6 +1945,72 @@ $btnConfigOpen.Add_Click({
     $path = Join-Path $toolRoot "customer.json"
     if (Test-Path $path) {
         Start-Process $path
+    }
+})
+
+$btnOfflineRun.Add_Click({
+    # VHD/VHDX Datei auswaehlen
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = "VHD(X)-Container auswaehlen"
+    $dlg.Filter = "VHD/VHDX Dateien (*.vhd;*.vhdx)|*.vhd;*.vhdx|Alle Dateien (*.*)|*.*"
+    $dlg.RestoreDirectory = $true
+    if ($dlg.ShowDialog() -ne "OK") { return }
+    $selectedVhd = $dlg.FileName
+
+    # TargetUser abfragen
+    $inputForm = New-Object System.Windows.Forms.Form
+    $inputForm.Text = "Offline: Ziel-Benutzer"
+    $inputForm.Size = New-Object System.Drawing.Size(400, 150)
+    $inputForm.StartPosition = "CenterParent"
+    $inputForm.FormBorderStyle = "FixedDialog"
+    $inputForm.MaximizeBox = $false
+    $inputForm.MinimizeBox = $false
+
+    $lblUser = New-Object System.Windows.Forms.Label
+    $lblUser.Text = "TargetUser (DOMAIN\Username):"
+    $lblUser.Location = New-Object System.Drawing.Point(10, 15)
+    $lblUser.AutoSize = $true
+    $inputForm.Controls.Add($lblUser)
+
+    $txtUser = New-Object System.Windows.Forms.TextBox
+    $txtUser.Location = New-Object System.Drawing.Point(10, 40)
+    $txtUser.Size = New-Object System.Drawing.Size(360, 24)
+    $inputForm.Controls.Add($txtUser)
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = "OK"
+    $btnOk.Location = New-Object System.Drawing.Point(210, 75)
+    $btnOk.DialogResult = "OK"
+    $inputForm.AcceptButton = $btnOk
+    $inputForm.Controls.Add($btnOk)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Abbrechen"
+    $btnCancel.Location = New-Object System.Drawing.Point(295, 75)
+    $btnCancel.DialogResult = "Cancel"
+    $inputForm.CancelButton = $btnCancel
+    $inputForm.Controls.Add($btnCancel)
+
+    if ($inputForm.ShowDialog() -ne "OK") { return }
+    $targetUser = $txtUser.Text.Trim()
+    if (-not $targetUser) {
+        [System.Windows.Forms.MessageBox]::Show("TargetUser ist Pflicht.", "Hinweis", "OK", "Warning") | Out-Null
+        return
+    }
+
+    # Policy speichern und Runner starten
+    try {
+        $policyOut = Convert-PocRowsToPolicy -Rows $gridActionsPoc.Rows -BasePolicy (Get-DefaultPolicy)
+        if ($null -eq $policyOut) { return }
+        Write-PolicyJson -Policy $policyOut
+
+        $trigger = "Offline"
+        $runnerPath = Join-Path $toolRoot "Runners\Runner.ps1"
+        $args = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -Trigger $trigger -TargetUser `"$targetUser`" -VhdPath `"$selectedVhd`""
+        Start-Process powershell.exe -ArgumentList $args
+        $lblConfigStatus.Text = "Offline-Runner gestartet fuer: $targetUser"
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Offline-Runner konnte nicht gestartet werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
 })
 

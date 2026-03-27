@@ -6,9 +6,7 @@
                   "repoRoot":  ""
               },
     "fslogix":  {
-                    "enabled":  false,
-                    "profileShare":  "",
-                    "officeContainerShare":  ""
+                    "enabled":  false
                 },
     "branding":  {
                      "windowTitle":  "Benutzerprofil Wartung Admin",
