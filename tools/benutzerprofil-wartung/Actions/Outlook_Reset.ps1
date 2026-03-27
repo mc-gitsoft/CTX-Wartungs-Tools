@@ -52,11 +52,15 @@ function Stop-OfficeProcesses {
 function Clear-OutlookCache {
     Write-Log "Starte Standard-Reset (Cache und temporaere Dateien)..."
 
+    # Profil-Container / Live-Profil
     $paths = @()
     $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Roaming -RelativePath 'Microsoft\Outlook\RoamCache'
     $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Roaming -RelativePath 'Microsoft\Outlook\Offline Address Books'
     $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Local   -RelativePath 'Microsoft\Outlook'
     $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Local   -RelativePath 'Microsoft\Windows\INetCache\Content.Outlook'
+
+    # ODFC: nur Cache-Ordner (OST/NST bleiben erhalten)
+    $paths += WartungsTools.SDK\Get-OdfcPaths -AppFolders @('ODFC\RoamCache', 'ODFC\HubAppFileCache', 'Outlook_UWP')
 
     foreach ($p in $paths) {
         if (Test-Path $p) {
@@ -78,6 +82,16 @@ function Reset-OutlookProfiles {
     Write-Log "Starte Profil-Reset..."
 
     Clear-OutlookCache
+
+    # ODFC: kompletten Outlook-Bereich loeschen (inkl. OST/NST)
+    $odfcFull = WartungsTools.SDK\Get-OdfcPaths -AppFolders @('ODFC', 'ODFCPersonalization')
+    foreach ($p in $odfcFull) {
+        if (Test-Path $p) {
+            $removed = WartungsTools.SDK\Remove-PathSafe -Path $p
+            if ($removed) { Write-Log ("ODFC geloescht: {0}" -f $p) }
+            else { Write-Log ("ODFC konnte nicht vollstaendig geloescht werden: {0}" -f $p) 'WARN' }
+        }
+    }
 
     $regKeys = @(
         'HKCU:\Software\Microsoft\Office\16.0\Outlook\Profiles',
@@ -101,6 +115,16 @@ function Reset-OutlookHard {
     Write-Log "Starte Hard-Reset: kompletter Outlook-Registry-Schluessel..."
 
     Clear-OutlookCache
+
+    # ODFC: kompletten Outlook-Bereich loeschen (inkl. OST/NST)
+    $odfcFull = WartungsTools.SDK\Get-OdfcPaths -AppFolders @('ODFC', 'ODFCPersonalization')
+    foreach ($p in $odfcFull) {
+        if (Test-Path $p) {
+            $removed = WartungsTools.SDK\Remove-PathSafe -Path $p
+            if ($removed) { Write-Log ("ODFC geloescht: {0}" -f $p) }
+            else { Write-Log ("ODFC konnte nicht vollstaendig geloescht werden: {0}" -f $p) 'WARN' }
+        }
+    }
 
     $root = 'HKCU:\Software\Microsoft\Office\16.0\Outlook'
     $removed = WartungsTools.SDK\Clear-RegistryPath -Path $root
