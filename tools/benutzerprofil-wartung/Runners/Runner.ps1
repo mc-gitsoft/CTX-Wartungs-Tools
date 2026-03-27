@@ -20,7 +20,11 @@ catch {
 }
 
 $policy = Get-PolicyConfig
-$section = if ($Trigger -eq "Logon") { $policy.logon } else { $policy.logoff }
+$section = switch ($Trigger) {
+    "Logon"  { $policy.logon }
+    "Logoff" { $policy.logoff }
+    "Offline" { $policy.offline }
+}
 if (-not $section) {
     Write-Log -Level "WARN" -Message "No policy section found for trigger: $Trigger" -ToolId $toolId -Trigger $Trigger
     exit 0
@@ -42,8 +46,24 @@ function Resolve-OfflineProfileRoot {
     return ("C:\\_OfflineProfiles\\{0}" -f $sanitized)
 }
 
-if ($Trigger -eq "Offline" -and -not $TargetUser) {
-    throw "Offline trigger requires -TargetUser in DOMAIN\\User format."
+if ($Trigger -eq "Offline" -and -not $TargetUser -and -not $VhdPath -and -not $PreviewOnly) {
+    throw "Offline trigger requires -VhdPath or -TargetUser."
+}
+
+# Extract username from VHD path if TargetUser not provided
+if ($Trigger -eq "Offline" -and -not $TargetUser -and $VhdPath) {
+    $vhdName = [System.IO.Path]::GetFileNameWithoutExtension($VhdPath)
+    if ($vhdName -match '^Profile_(.+)$') {
+        $TargetUser = $Matches[1]
+    } else {
+        $parentDir = Split-Path (Split-Path $VhdPath -Parent) -Leaf
+        if ($parentDir -match '_(.+)$') {
+            $TargetUser = $Matches[1]
+        } else {
+            $TargetUser = $parentDir
+        }
+    }
+    Write-Log -Level "INFO" -Message ("TargetUser derived from VHD path: {0}" -f $TargetUser) -ToolId $toolId -Trigger $Trigger
 }
 
 $customerConfig = Get-CustomerConfig

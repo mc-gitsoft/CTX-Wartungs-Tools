@@ -266,7 +266,7 @@ function New-PocActionGrid {
 
     $colTrigger = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
     $colTrigger.HeaderText = "Trigger"
-    $colTrigger.DataSource = @("Logon","Logoff","Both")
+    $colTrigger.DataSource = @("Logon","Logoff","Both","Offline")
     $colTrigger.Width = 75
     $colTrigger.MinimumWidth = 65
 
@@ -397,6 +397,10 @@ function Get-DefaultPolicy {
             once = @()
         }
         logoff = [pscustomobject]@{
+            every = [pscustomobject]@{ enabled = $false; actions = @(); targets = [pscustomobject]@{ users = @(); groups = @() } }
+            once = @()
+        }
+        offline = [pscustomobject]@{
             every = [pscustomobject]@{ enabled = $false; actions = @(); targets = [pscustomobject]@{ users = @(); groups = @() } }
             once = @()
         }
@@ -601,6 +605,10 @@ $btnPocParamsEdit = New-Object System.Windows.Forms.Button
 $btnPocParamsEdit.Text = "Params bearbeiten..."
 $btnPocParamsEdit.AutoSize = $true
 
+$btnOfflineRun = New-Object System.Windows.Forms.Button
+$btnOfflineRun.Text = "Offline ausfuehren..."
+$btnOfflineRun.AutoSize = $true
+
 $pocButtons.Controls.Add($btnPocAdd)
 $pocButtons.Controls.Add($btnPocRemove)
 $pocButtons.Controls.Add($btnPocDuplicate)
@@ -608,6 +616,7 @@ $pocButtons.Controls.Add($btnPocDisableCampaign)
 $pocButtons.Controls.Add($btnPocQuickAddOnce)
 $pocButtons.Controls.Add($btnPocPreview)
 $pocButtons.Controls.Add($btnPocParamsEdit)
+$pocButtons.Controls.Add($btnOfflineRun)
 
 $pocPanel.Controls.Add($gridActionsPoc)
 $pocPanel.Controls.Add($chkPocShowEnabled)
@@ -723,7 +732,7 @@ $btnPocQuickAddOnce.Add_Click({
     $lblTrigger.AutoSize = $true
     $cmbTrigger = New-Object System.Windows.Forms.ComboBox
     $cmbTrigger.DropDownStyle = "DropDownList"
-    [void]$cmbTrigger.Items.AddRange(@("Logon","Logoff","Both"))
+    [void]$cmbTrigger.Items.AddRange(@("Logon","Logoff","Both","Offline"))
     $cmbTrigger.SelectedItem = "Logon"
 
     $lblValidUntil = New-Object System.Windows.Forms.Label
@@ -1017,12 +1026,16 @@ function Get-PreviewPolicyFromGrid {
     $policy = Get-DefaultPolicy
     $logonEveryActions = @()
     $logoffEveryActions = @()
+    $offlineEveryActions = @()
     $logonEveryUsers = @()
     $logonEveryGroups = @()
     $logoffEveryUsers = @()
     $logoffEveryGroups = @()
+    $offlineEveryUsers = @()
+    $offlineEveryGroups = @()
     $logonOnceGroups = @{}
     $logoffOnceGroups = @{}
+    $offlineOnceGroups = @{}
 
     foreach ($row in $Rows) {
         if ($row.IsNewRow) { continue }
@@ -1074,6 +1087,11 @@ function Get-PreviewPolicyFromGrid {
                 $logoffEveryUsers += $users
                 $logoffEveryGroups += $groups
             }
+            if ($trigger -eq "Offline") {
+                $offlineEveryActions += $actionObj
+                $offlineEveryUsers += $users
+                $offlineEveryGroups += $groups
+            }
             continue
         }
 
@@ -1110,16 +1128,33 @@ function Get-PreviewPolicyFromGrid {
             }
             $logoffOnceGroups[$key].actions += $actionObj
         }
+
+        if ($trigger -eq "Offline") {
+            if (-not $offlineOnceGroups.ContainsKey($key)) {
+                $offlineOnceGroups[$key] = [pscustomobject]@{
+                    enabled = $enabled
+                    campaignId = $campaignId
+                    validUntil = $validUntil
+                    targets = [pscustomobject]@{ users = $users; groups = $groups }
+                    actions = @()
+                }
+            }
+            $offlineOnceGroups[$key].actions += $actionObj
+        }
     }
 
     $policy.logon.every.actions = $logonEveryActions
     $policy.logoff.every.actions = $logoffEveryActions
+    $policy.offline.every.actions = $offlineEveryActions
     $policy.logon.every.enabled = ($logonEveryActions.Count -gt 0)
     $policy.logoff.every.enabled = ($logoffEveryActions.Count -gt 0)
+    $policy.offline.every.enabled = ($offlineEveryActions.Count -gt 0)
     $policy.logon.every.targets = [pscustomobject]@{ users = @($logonEveryUsers | Select-Object -Unique); groups = @($logonEveryGroups | Select-Object -Unique) }
     $policy.logoff.every.targets = [pscustomobject]@{ users = @($logoffEveryUsers | Select-Object -Unique); groups = @($logoffEveryGroups | Select-Object -Unique) }
+    $policy.offline.every.targets = [pscustomobject]@{ users = @($offlineEveryUsers | Select-Object -Unique); groups = @($offlineEveryGroups | Select-Object -Unique) }
     $policy.logon.once = @($logonOnceGroups.Values)
     $policy.logoff.once = @($logoffOnceGroups.Values)
+    $policy.offline.once = @($offlineOnceGroups.Values)
 
     return $policy
 }
@@ -1178,7 +1213,7 @@ $btnPocPreview.Add_Click({
     $lblTrigger.AutoSize = $true
     $cmbTrigger = New-Object System.Windows.Forms.ComboBox
     $cmbTrigger.DropDownStyle = "DropDownList"
-    [void]$cmbTrigger.Items.AddRange(@("Logon","Logoff"))
+    [void]$cmbTrigger.Items.AddRange(@("Logon","Logoff","Offline"))
     $cmbTrigger.SelectedItem = "Logon"
 
     $lblUser = New-Object System.Windows.Forms.Label
@@ -1277,7 +1312,12 @@ $btnPocPreview.Add_Click({
         $includeDisabled = $chkIncludeDisabled.Checked
 
         $policy = Get-PreviewPolicyFromGrid -Rows $gridActionsPoc.Rows -IncludeDisabled:$includeDisabled
-        $section = if ($trigger -eq "Logon") { $policy.logon } else { $policy.logoff }
+        $section = switch ($trigger) {
+            "Logon"  { $policy.logon }
+            "Logoff" { $policy.logoff }
+            "Offline" { $policy.offline }
+            default  { $policy.logoff }
+        }
 
         $lines = @()
         $lines += ("Trigger: {0} | User: {1}" -f $trigger, $userInput)
@@ -1521,6 +1561,7 @@ function Convert-PolicyToPocRows {
 
     $logonEvery = Normalize-Every $Policy.logon.every
     $logoffEvery = Normalize-Every $Policy.logoff.every
+    $offlineEvery = Normalize-Every $Policy.offline.every
 
     if ($logonEvery -and $logonEvery.actions) {
         $evTargets = $logonEvery.targets
@@ -1603,6 +1644,47 @@ function Convert-PolicyToPocRows {
             }
         }
     }
+
+    if ($offlineEvery -and $offlineEvery.actions) {
+        $evTargets = $offlineEvery.targets
+        $evUsers = if ($evTargets) { @($evTargets.users) } else { @() }
+        $evGroups = if ($evTargets) { @($evTargets.groups) } else { @() }
+        foreach ($action in @($offlineEvery.actions)) {
+            Add-PocRow -Grid $gridActionsPoc -RowData @{
+                Enabled = [bool]$offlineEvery.enabled
+                Trigger = "Offline"
+                Frequency = "Every"
+                Action = $action.name
+                Mode = if ($action.mode) { $action.mode } else { "Silent" }
+                Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
+                CampaignId = ""
+                ValidUntil = ""
+                TargetsUsers = ($evUsers -join "`r`n")
+                TargetsGroups = ($evGroups -join "`r`n")
+            }
+        }
+    }
+
+    foreach ($entry in @($Policy.offline.once)) {
+        if (-not $entry) { continue }
+        $targets = $entry.targets
+        $users = if ($targets) { @($targets.users) } else { @() }
+        $groups = if ($targets) { @($targets.groups) } else { @() }
+        foreach ($action in @($entry.actions)) {
+            Add-PocRow -Grid $gridActionsPoc -RowData @{
+                Enabled = [bool]$entry.enabled
+                Trigger = "Offline"
+                Frequency = "Once"
+                Action = $action.name
+                Mode = if ($action.mode) { $action.mode } else { "Silent" }
+                Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
+                CampaignId = $entry.campaignId
+                ValidUntil = $entry.validUntil
+                TargetsUsers = ($users -join "`r`n")
+                TargetsGroups = ($groups -join "`r`n")
+            }
+        }
+    }
 }
 
 function Split-TargetText {
@@ -1621,17 +1703,23 @@ function Convert-PocRowsToPolicy {
     $policy = $BasePolicy
     $policy.logon.every.actions = @()
     $policy.logoff.every.actions = @()
+    $policy.offline.every.actions = @()
     $policy.logon.once = @()
     $policy.logoff.once = @()
+    $policy.offline.once = @()
 
     $logonEveryActions = @()
     $logoffEveryActions = @()
+    $offlineEveryActions = @()
     $logonEveryUsers = @()
     $logonEveryGroups = @()
     $logoffEveryUsers = @()
     $logoffEveryGroups = @()
+    $offlineEveryUsers = @()
+    $offlineEveryGroups = @()
     $logonOnceGroups = @{}
     $logoffOnceGroups = @{}
+    $offlineOnceGroups = @{}
 
     $rowNumber = 1
     foreach ($row in $Rows) {
@@ -1688,6 +1776,11 @@ function Convert-PocRowsToPolicy {
                 $logoffEveryUsers += $users
                 $logoffEveryGroups += $groups
             }
+            if ($trigger -eq "Offline") {
+                $offlineEveryActions += $actionObj
+                $offlineEveryUsers += $users
+                $offlineEveryGroups += $groups
+            }
             $rowNumber += 1
             continue
         }
@@ -1727,17 +1820,34 @@ function Convert-PocRowsToPolicy {
             $logoffOnceGroups[$key].actions += $actionObj
         }
 
+        if ($trigger -eq "Offline") {
+            if (-not $offlineOnceGroups.ContainsKey($key)) {
+                $offlineOnceGroups[$key] = [pscustomobject]@{
+                    enabled = $true
+                    campaignId = $campaignId
+                    validUntil = $validUntil
+                    targets = [pscustomobject]@{ users = $users; groups = $groups }
+                    actions = @()
+                }
+            }
+            $offlineOnceGroups[$key].actions += $actionObj
+        }
+
         $rowNumber += 1
     }
 
     $policy.logon.every.actions = $logonEveryActions
     $policy.logoff.every.actions = $logoffEveryActions
+    $policy.offline.every.actions = $offlineEveryActions
     $policy.logon.every.enabled = ($logonEveryActions.Count -gt 0)
     $policy.logoff.every.enabled = ($logoffEveryActions.Count -gt 0)
+    $policy.offline.every.enabled = ($offlineEveryActions.Count -gt 0)
     $policy.logon.every.targets = [pscustomobject]@{ users = @($logonEveryUsers | Select-Object -Unique); groups = @($logonEveryGroups | Select-Object -Unique) }
     $policy.logoff.every.targets = [pscustomobject]@{ users = @($logoffEveryUsers | Select-Object -Unique); groups = @($logoffEveryGroups | Select-Object -Unique) }
+    $policy.offline.every.targets = [pscustomobject]@{ users = @($offlineEveryUsers | Select-Object -Unique); groups = @($offlineEveryGroups | Select-Object -Unique) }
     $policy.logon.once = @($logonOnceGroups.Values)
     $policy.logoff.once = @($logoffOnceGroups.Values)
+    $policy.offline.once = @($offlineOnceGroups.Values)
 
     return $policy
 }
@@ -1811,15 +1921,10 @@ $btnOpenLogs = New-Object System.Windows.Forms.Button
 $btnOpenLogs.Text = "Logs-Ordner oeffnen"
 $btnOpenLogs.AutoSize = $true
 
-$btnOfflineRun = New-Object System.Windows.Forms.Button
-$btnOfflineRun.Text = "Offline ausfuehren..."
-$btnOfflineRun.AutoSize = $true
-
 $cfgButtons.Controls.Add($btnConfigNew)
 $cfgButtons.Controls.Add($btnConfigSave)
 $cfgButtons.Controls.Add($btnConfigOpen)
 $cfgButtons.Controls.Add($btnOpenLogs)
-$cfgButtons.Controls.Add($btnOfflineRun)
 
 $lblConfigStatus = New-Object System.Windows.Forms.Label
 $lblConfigStatus.AutoSize = $true
@@ -1957,58 +2062,16 @@ $btnOfflineRun.Add_Click({
     if ($dlg.ShowDialog() -ne "OK") { return }
     $selectedVhd = $dlg.FileName
 
-    # TargetUser abfragen
-    $inputForm = New-Object System.Windows.Forms.Form
-    $inputForm.Text = "Offline: Ziel-Benutzer"
-    $inputForm.Size = New-Object System.Drawing.Size(400, 150)
-    $inputForm.StartPosition = "CenterParent"
-    $inputForm.FormBorderStyle = "FixedDialog"
-    $inputForm.MaximizeBox = $false
-    $inputForm.MinimizeBox = $false
-
-    $lblUser = New-Object System.Windows.Forms.Label
-    $lblUser.Text = "TargetUser (DOMAIN\Username):"
-    $lblUser.Location = New-Object System.Drawing.Point(10, 15)
-    $lblUser.AutoSize = $true
-    $inputForm.Controls.Add($lblUser)
-
-    $txtUser = New-Object System.Windows.Forms.TextBox
-    $txtUser.Location = New-Object System.Drawing.Point(10, 40)
-    $txtUser.Size = New-Object System.Drawing.Size(360, 24)
-    $inputForm.Controls.Add($txtUser)
-
-    $btnOk = New-Object System.Windows.Forms.Button
-    $btnOk.Text = "OK"
-    $btnOk.Location = New-Object System.Drawing.Point(210, 75)
-    $btnOk.DialogResult = "OK"
-    $inputForm.AcceptButton = $btnOk
-    $inputForm.Controls.Add($btnOk)
-
-    $btnCancel = New-Object System.Windows.Forms.Button
-    $btnCancel.Text = "Abbrechen"
-    $btnCancel.Location = New-Object System.Drawing.Point(295, 75)
-    $btnCancel.DialogResult = "Cancel"
-    $inputForm.CancelButton = $btnCancel
-    $inputForm.Controls.Add($btnCancel)
-
-    if ($inputForm.ShowDialog() -ne "OK") { return }
-    $targetUser = $txtUser.Text.Trim()
-    if (-not $targetUser) {
-        [System.Windows.Forms.MessageBox]::Show("TargetUser ist Pflicht.", "Hinweis", "OK", "Warning") | Out-Null
-        return
-    }
-
     # Policy speichern und Runner starten
     try {
         $policyOut = Convert-PocRowsToPolicy -Rows $gridActionsPoc.Rows -BasePolicy (Get-DefaultPolicy)
         if ($null -eq $policyOut) { return }
         Write-PolicyJson -Policy $policyOut
 
-        $trigger = "Offline"
         $runnerPath = Join-Path $toolRoot "Runners\Runner.ps1"
-        $args = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -Trigger $trigger -TargetUser `"$targetUser`" -VhdPath `"$selectedVhd`""
-        Start-Process powershell.exe -ArgumentList $args
-        $lblConfigStatus.Text = "Offline-Runner gestartet fuer: $targetUser"
+        $runnerArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -Trigger Offline -VhdPath `"$selectedVhd`""
+        Start-Process powershell.exe -ArgumentList $runnerArgs
+        $lblPolicyStatus.Text = "Offline-Runner gestartet: $selectedVhd"
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Offline-Runner konnte nicht gestartet werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
