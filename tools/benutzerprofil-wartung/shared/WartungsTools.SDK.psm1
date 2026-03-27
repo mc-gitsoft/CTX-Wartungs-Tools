@@ -416,7 +416,18 @@ function Mount-FSLogixVHD {
             return "$($volume.DriveLetter):\"
         }
 
-        # No drive letter assigned — use access path
+        # No drive letter assigned — assign one
+        $partition = $partitions | Where-Object { $_.Type -ne 'Reserved' -and $_.Size -gt 0 } | Select-Object -First 1
+        if ($partition) {
+            $usedLetters = (Get-Volume | Where-Object { $_.DriveLetter } | ForEach-Object { $_.DriveLetter })
+            $freeLetter = [char[]](71..90) | Where-Object { [string]$_ -notin $usedLetters } | Select-Object -First 1
+            if ($freeLetter) {
+                $partition | Set-Partition -NewDriveLetter $freeLetter -ErrorAction Stop
+                return "$($freeLetter):\"
+            }
+        }
+
+        # Fallback: access path (Volume GUID)
         $accessPath = ($partitions | Where-Object { $_.AccessPaths.Count -gt 0 } | Select-Object -First 1).AccessPaths[0]
         if ($accessPath) {
             return $accessPath
