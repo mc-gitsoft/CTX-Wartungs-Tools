@@ -2070,7 +2070,7 @@ $btnOfflineRun.Add_Click({
 
         $runnerPath = Join-Path $toolRoot "Runners\Runner.ps1"
         $runnerArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -Trigger Offline -VhdPath `"$selectedVhd`""
-        Start-Process powershell.exe -ArgumentList $runnerArgs
+        Start-Process powershell.exe -ArgumentList $runnerArgs -Verb RunAs
         $lblPolicyStatus.Text = "Offline-Runner gestartet: $selectedVhd"
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Offline-Runner konnte nicht gestartet werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
