@@ -196,106 +196,6 @@ function New-LabeledTextBox {
     }
 }
 
-function New-ActionGrid {
-    param(
-        [string[]]$ActionNames
-    )
-
-    $panel = New-Object System.Windows.Forms.Panel
-    $panel.Width = 430
-    $panel.Height = 180
-
-    $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Dock = "Fill"
-    $grid.AllowUserToAddRows = $false
-    $grid.AutoSizeColumnsMode = "Fill"
-    $grid.RowHeadersVisible = $false
-    $grid.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $grid.MultiSelect = $false
-
-    $colName = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
-    $colName.HeaderText = "Action"
-    $colName.DataSource = $ActionNames
-    $colName.Width = 180
-
-    $colParams = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colParams.HeaderText = "Params (JSON)"
-    $colParams.Width = 230
-
-    [void]$grid.Columns.Add($colName)
-    [void]$grid.Columns.Add($colParams)
-
-    $buttons = New-Object System.Windows.Forms.FlowLayoutPanel
-    $buttons.FlowDirection = "LeftToRight"
-    $buttons.WrapContents = $false
-    $buttons.Dock = "Bottom"
-    $buttons.AutoSize = $true
-
-    $btnAdd = New-Object System.Windows.Forms.Button
-    $btnAdd.Text = "Add"
-    $btnAdd.AutoSize = $true
-
-    $btnRemove = New-Object System.Windows.Forms.Button
-    $btnRemove.Text = "Remove"
-    $btnRemove.AutoSize = $true
-
-    $buttons.Controls.Add($btnAdd)
-    $buttons.Controls.Add($btnRemove)
-
-    $panel.Controls.Add($grid)
-    $panel.Controls.Add($buttons)
-
-    return [pscustomobject]@{
-        Panel = $panel
-        Grid = $grid
-        AddButton = $btnAdd
-        RemoveButton = $btnRemove
-    }
-}
-
-function Add-ActionRow {
-    param(
-        [System.Windows.Forms.DataGridView]$Grid,
-        [string[]]$ActionNames,
-        [pscustomobject]$Action,
-        [switch]$UseDefaultAction,
-        [switch]$EmptyParamsWhenNull
-    )
-
-    $rowIndex = $Grid.Rows.Add()
-    $row = $Grid.Rows[$rowIndex]
-
-    if ($Action -and $Action.name) {
-        $row.Cells[0].Value = $Action.name
-    } elseif ($UseDefaultAction -and $ActionNames.Count -gt 0) {
-        $row.Cells[0].Value = $ActionNames[0]
-    }
-
-    if ($Action -and $Action.params) {
-        $row.Cells[1].Value = ($Action.params | ConvertTo-Json -Depth 6 -Compress)
-    } elseif ($EmptyParamsWhenNull) {
-        $row.Cells[1].Value = ""
-    } else {
-        $row.Cells[1].Value = "{}"
-    }
-}
-
-function Set-ActionsToGrid {
-    param(
-        [System.Windows.Forms.DataGridView]$Grid,
-        [string[]]$ActionNames,
-        [object[]]$Actions
-    )
-
-    $Grid.DataSource = $null
-    $Grid.Rows.Clear()
-    if (-not $Actions) { return }
-
-    foreach ($action in $Actions) {
-        Add-ActionRow -Grid $Grid -ActionNames $ActionNames -Action $action -EmptyParamsWhenNull
-    }
-}
-
 function Normalize-Actions {
     param([object]$Value)
 
@@ -361,37 +261,57 @@ function New-PocActionGrid {
 
     $colEnabled = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
     $colEnabled.HeaderText = "Enabled"
+    $colEnabled.Width = 55
+    $colEnabled.MinimumWidth = 55
 
     $colTrigger = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
     $colTrigger.HeaderText = "Trigger"
     $colTrigger.DataSource = @("Logon","Logoff","Both")
+    $colTrigger.Width = 75
+    $colTrigger.MinimumWidth = 65
 
     $colFrequency = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
     $colFrequency.HeaderText = "Frequency"
     $colFrequency.DataSource = @("Every","Once")
+    $colFrequency.Width = 80
+    $colFrequency.MinimumWidth = 65
 
     $colAction = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
     $colAction.HeaderText = "Action"
     $colAction.DataSource = $ActionNames
+    $colAction.Width = 160
+    $colAction.MinimumWidth = 120
 
     $colMode = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
     $colMode.HeaderText = "Mode"
     $colMode.DataSource = @("Silent","Interactive")
+    $colMode.Width = 80
+    $colMode.MinimumWidth = 65
 
     $colParams = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colParams.HeaderText = "Params (JSON)"
+    $colParams.Width = 200
+    $colParams.MinimumWidth = 100
 
     $colCampaignId = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colCampaignId.HeaderText = "CampaignId"
+    $colCampaignId.Width = 110
+    $colCampaignId.MinimumWidth = 80
 
     $colValidUntil = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colValidUntil.HeaderText = "ValidUntil"
+    $colValidUntil.Width = 90
+    $colValidUntil.MinimumWidth = 80
 
     $colTargetsUsers = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colTargetsUsers.HeaderText = "TargetsUsers"
+    $colTargetsUsers.Width = 110
+    $colTargetsUsers.MinimumWidth = 80
 
     $colTargetsGroups = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colTargetsGroups.HeaderText = "TargetsGroups"
+    $colTargetsGroups.Width = 110
+    $colTargetsGroups.MinimumWidth = 80
 
     [void]$grid.Columns.Add($colEnabled)
     [void]$grid.Columns.Add($colTrigger)
@@ -599,58 +519,12 @@ $policyRoot.ColumnCount = 1
 $policyRoot.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
 $policyRoot.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
 
-$grpLogonOnce = New-Object System.Windows.Forms.GroupBox
-$grpLogonOnce.Text = "Logon Once"
-$grpLogonOnce.Dock = "Fill"
-
-$grpLogonEvery = New-Object System.Windows.Forms.GroupBox
-$grpLogonEvery.Text = "Logon Every"
-$grpLogonEvery.Dock = "Fill"
-
-$grpLogoffOnce = New-Object System.Windows.Forms.GroupBox
-$grpLogoffOnce.Text = "Logoff Once"
-$grpLogoffOnce.Dock = "Fill"
-
-$grpLogoffEvery = New-Object System.Windows.Forms.GroupBox
-$grpLogoffEvery.Text = "Logoff Every"
-$grpLogoffEvery.Dock = "Fill"
-
 $policyTabs = New-Object System.Windows.Forms.TabControl
 $policyTabs.Dock = "Fill"
 
-$tabLogon = New-Object System.Windows.Forms.TabPage
-$tabLogon.Text = "Logon"
-
-$tabLogoff = New-Object System.Windows.Forms.TabPage
-$tabLogoff.Text = "Logoff"
-
 $tabActionsPoc = New-Object System.Windows.Forms.TabPage
-$tabActionsPoc.Text = "Actions (PoC)"
+$tabActionsPoc.Text = "Actions"
 
-$tlpLogon = New-Object System.Windows.Forms.TableLayoutPanel
-$tlpLogon.Dock = "Fill"
-$tlpLogon.ColumnCount = 1
-$tlpLogon.RowCount = 2
-$tlpLogon.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-$tlpLogon.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-
-$tlpLogoff = New-Object System.Windows.Forms.TableLayoutPanel
-$tlpLogoff.Dock = "Fill"
-$tlpLogoff.ColumnCount = 1
-$tlpLogoff.RowCount = 2
-$tlpLogoff.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-$tlpLogoff.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-
-$tlpLogon.Controls.Add($grpLogonEvery, 0, 0)
-$tlpLogon.Controls.Add($grpLogonOnce, 0, 1)
-$tlpLogoff.Controls.Add($grpLogoffEvery, 0, 0)
-$tlpLogoff.Controls.Add($grpLogoffOnce, 0, 1)
-
-$tabLogon.Controls.Add($tlpLogon)
-$tabLogoff.Controls.Add($tlpLogoff)
-
-$policyTabs.Controls.Add($tabLogon)
-$policyTabs.Controls.Add($tabLogoff)
 $policyTabs.Controls.Add($tabActionsPoc)
 
 $policyRoot.Controls.Add($policyTabs, 0, 0)
@@ -680,92 +554,6 @@ $policyButtons.Controls.Add($lblPolicyStatus)
 
 $policyRoot.Controls.Add($policyButtons, 0, 1)
 $tabPolicy.Controls.Add($policyRoot)
-
-$logonOncePanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$logonOncePanel.Dock = "Fill"
-$logonOncePanel.FlowDirection = "TopDown"
-$logonOncePanel.WrapContents = $false
-$logonOncePanel.AutoScroll = $true
-
-$chkLogonOnceEnabled = New-Object System.Windows.Forms.CheckBox
-$chkLogonOnceEnabled.Text = "Enabled"
-$chkLogonOnceEnabled.Checked = $false
-$chkLogonOnceEnabled.AutoCheck = $true
-$chkLogonOnceEnabled.Enabled = $true
-
-$logonOnceCampaign = New-LabeledTextBox -LabelText "CampaignId" -TextWidth 240
-$logonOnceValidUntil = New-LabeledTextBox -LabelText "ValidUntil (YYYY-MM-DD)" -TextWidth 140
-$logonOnceUsers = New-LabeledTextBox -LabelText "Targets Users" -TextWidth 240 -Multiline
-$logonOnceGroups = New-LabeledTextBox -LabelText "Targets Groups" -TextWidth 240 -Multiline
-$logonOnceActions = New-ActionGrid -ActionNames $actionNames
-
-$logonOncePanel.Controls.Add($chkLogonOnceEnabled)
-$logonOncePanel.Controls.Add($logonOnceCampaign.Panel)
-$logonOncePanel.Controls.Add($logonOnceValidUntil.Panel)
-$logonOncePanel.Controls.Add($logonOnceUsers.Panel)
-$logonOncePanel.Controls.Add($logonOnceGroups.Panel)
-$logonOncePanel.Controls.Add($logonOnceActions.Panel)
-
-$grpLogonOnce.Controls.Add($logonOncePanel)
-
-$logonEveryPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$logonEveryPanel.Dock = "Fill"
-$logonEveryPanel.FlowDirection = "TopDown"
-$logonEveryPanel.WrapContents = $false
-$logonEveryPanel.AutoScroll = $true
-
-$chkLogonEveryEnabled = New-Object System.Windows.Forms.CheckBox
-$chkLogonEveryEnabled.Text = "Enabled"
-
-$logonEveryActions = New-ActionGrid -ActionNames $actionNames
-
-$logonEveryPanel.Controls.Add($chkLogonEveryEnabled)
-$logonEveryPanel.Controls.Add($logonEveryActions.Panel)
-
-$grpLogonEvery.Controls.Add($logonEveryPanel)
-
-$logoffOncePanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$logoffOncePanel.Dock = "Fill"
-$logoffOncePanel.FlowDirection = "TopDown"
-$logoffOncePanel.WrapContents = $false
-$logoffOncePanel.AutoScroll = $true
-
-$chkLogoffOnceEnabled = New-Object System.Windows.Forms.CheckBox
-$chkLogoffOnceEnabled.Text = "Enabled"
-$chkLogoffOnceEnabled.Checked = $false
-$chkLogoffOnceEnabled.AutoCheck = $true
-$chkLogoffOnceEnabled.Enabled = $true
-
-$logoffOnceCampaign = New-LabeledTextBox -LabelText "CampaignId" -TextWidth 240
-$logoffOnceValidUntil = New-LabeledTextBox -LabelText "ValidUntil (YYYY-MM-DD)" -TextWidth 140
-$logoffOnceUsers = New-LabeledTextBox -LabelText "Targets Users" -TextWidth 240 -Multiline
-$logoffOnceGroups = New-LabeledTextBox -LabelText "Targets Groups" -TextWidth 240 -Multiline
-$logoffOnceActions = New-ActionGrid -ActionNames $actionNames
-
-$logoffOncePanel.Controls.Add($chkLogoffOnceEnabled)
-$logoffOncePanel.Controls.Add($logoffOnceCampaign.Panel)
-$logoffOncePanel.Controls.Add($logoffOnceValidUntil.Panel)
-$logoffOncePanel.Controls.Add($logoffOnceUsers.Panel)
-$logoffOncePanel.Controls.Add($logoffOnceGroups.Panel)
-$logoffOncePanel.Controls.Add($logoffOnceActions.Panel)
-
-$grpLogoffOnce.Controls.Add($logoffOncePanel)
-
-$logoffEveryPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$logoffEveryPanel.Dock = "Fill"
-$logoffEveryPanel.FlowDirection = "TopDown"
-$logoffEveryPanel.WrapContents = $false
-$logoffEveryPanel.AutoScroll = $true
-
-$chkLogoffEveryEnabled = New-Object System.Windows.Forms.CheckBox
-$chkLogoffEveryEnabled.Text = "Enabled"
-
-$logoffEveryActions = New-ActionGrid -ActionNames $actionNames
-
-$logoffEveryPanel.Controls.Add($chkLogoffEveryEnabled)
-$logoffEveryPanel.Controls.Add($logoffEveryActions.Panel)
-
-$grpLogoffEvery.Controls.Add($logoffEveryPanel)
 
 $pocPanel = New-Object System.Windows.Forms.Panel
 $pocPanel.Dock = "Fill"
@@ -821,11 +609,6 @@ $btnPocParamsEdit = New-Object System.Windows.Forms.Button
 $btnPocParamsEdit.Text = "Params bearbeiten..."
 $btnPocParamsEdit.AutoSize = $true
 
-$chkPolicyUsePoc = New-Object System.Windows.Forms.CheckBox
-$chkPolicyUsePoc.Text = "PoC als Quelle verwenden"
-$chkPolicyUsePoc.Checked = $true
-$chkPolicyUsePoc.AutoSize = $true
-
 $pocButtons.Controls.Add($btnPocAdd)
 $pocButtons.Controls.Add($btnPocRemove)
 $pocButtons.Controls.Add($btnPocDuplicate)
@@ -841,26 +624,6 @@ $pocPanel.Controls.Add($chkPocShowEnabled)
 $pocPanel.Controls.Add($pocButtons)
 
 $tabActionsPoc.Controls.Add($pocPanel)
-
-$logonEveryActions.AddButton.Add_Click({ Add-ActionRow -Grid $logonEveryActions.Grid -ActionNames $actionNames -UseDefaultAction })
-$logonEveryActions.RemoveButton.Add_Click({
-    Remove-SelectedActionRow -Grid $logonEveryActions.Grid -Context "Logon Every"
-})
-
-$logonOnceActions.AddButton.Add_Click({ Add-ActionRow -Grid $logonOnceActions.Grid -ActionNames $actionNames -UseDefaultAction })
-$logonOnceActions.RemoveButton.Add_Click({
-    Remove-SelectedActionRow -Grid $logonOnceActions.Grid -Context "Logon Once"
-})
-
-$logoffEveryActions.AddButton.Add_Click({ Add-ActionRow -Grid $logoffEveryActions.Grid -ActionNames $actionNames -UseDefaultAction })
-$logoffEveryActions.RemoveButton.Add_Click({
-    Remove-SelectedActionRow -Grid $logoffEveryActions.Grid -Context "Logoff Every"
-})
-
-$logoffOnceActions.AddButton.Add_Click({ Add-ActionRow -Grid $logoffOnceActions.Grid -ActionNames $actionNames -UseDefaultAction })
-$logoffOnceActions.RemoveButton.Add_Click({
-    Remove-SelectedActionRow -Grid $logoffOnceActions.Grid -Context "Logoff Once"
-})
 
 $btnPocAdd.Add_Click({
     Add-PocRow -Grid $gridActionsPoc -RowData @{
@@ -2011,202 +1774,10 @@ function Convert-PocRowsToPolicy {
     return $policy
 }
 
-function Load-PolicyIntoUI {
-    $policy = Read-PolicyJson
-
-    $logonEvery = Normalize-Every $policy.logon.every
-    $logoffEvery = Normalize-Every $policy.logoff.every
-    $logonOnce = @(@($policy.logon.once) | Where-Object { $_ })
-    $logoffOnce = @(@($policy.logoff.once) | Where-Object { $_ })
-
-    $chkLogonEveryEnabled.Checked = $false
-    $chkLogoffEveryEnabled.Checked = $false
-
-    if ($logonEvery) {
-        $chkLogonEveryEnabled.Checked = [bool]$logonEvery.enabled
-        $logonEveryActionsList = Normalize-Actions $logonEvery.actions
-        Set-ActionsToGrid -Grid $logonEveryActions.Grid -ActionNames $actionNames -Actions $logonEveryActionsList
-    } else {
-        $logonEveryActions.Grid.Rows.Clear()
-    }
-
-    if ($logoffEvery) {
-        $chkLogoffEveryEnabled.Checked = [bool]$logoffEvery.enabled
-        $logoffEveryActionsList = Normalize-Actions $logoffEvery.actions
-        Set-ActionsToGrid -Grid $logoffEveryActions.Grid -ActionNames $actionNames -Actions $logoffEveryActionsList
-    } else {
-        $logoffEveryActions.Grid.Rows.Clear()
-    }
-
-    $logonOnceItem = if ($logonOnce.Count -gt 0) { $logonOnce[0] } else { $null }
-    $logoffOnceItem = if ($logoffOnce.Count -gt 0) { $logoffOnce[0] } else { $null }
-
-    $chkLogonOnceEnabled.Checked = $false
-    $logonOnceCampaign.TextBox.Text = ""
-    $logonOnceValidUntil.TextBox.Text = ""
-    $logonOnceUsers.TextBox.Text = ""
-    $logonOnceGroups.TextBox.Text = ""
-    $logonOnceActions.Grid.Rows.Clear()
-
-    if ($logonOnceItem) {
-        $chkLogonOnceEnabled.Checked = [bool]$logonOnceItem.enabled
-        $logonOnceCampaign.TextBox.Text = [string]$logonOnceItem.campaignId
-        $logonOnceValidUntil.TextBox.Text = [string]$logonOnceItem.validUntil
-        $logonOnceTargets = $logonOnceItem.targets
-        $logonOnceUsersList = if ($logonOnceTargets) { Get-TargetLines -Value $logonOnceTargets.users } else { @() }
-        $logonOnceGroupsList = if ($logonOnceTargets) { Get-TargetLines -Value $logonOnceTargets.groups } else { @() }
-        $logonOnceUsers.TextBox.Text = ($logonOnceUsersList -join "`r`n")
-        $logonOnceGroups.TextBox.Text = ($logonOnceGroupsList -join "`r`n")
-        $logonOnceActionsList = Normalize-Actions $logonOnceItem.actions
-        Set-ActionsToGrid -Grid $logonOnceActions.Grid -ActionNames $actionNames -Actions $logonOnceActionsList
-    }
-
-    $chkLogoffOnceEnabled.Checked = $false
-    $logoffOnceCampaign.TextBox.Text = ""
-    $logoffOnceValidUntil.TextBox.Text = ""
-    $logoffOnceUsers.TextBox.Text = ""
-    $logoffOnceGroups.TextBox.Text = ""
-    $logoffOnceActions.Grid.Rows.Clear()
-
-    if ($logoffOnceItem) {
-        $chkLogoffOnceEnabled.Checked = [bool]$logoffOnceItem.enabled
-        $logoffOnceCampaign.TextBox.Text = [string]$logoffOnceItem.campaignId
-        $logoffOnceValidUntil.TextBox.Text = [string]$logoffOnceItem.validUntil
-        $logoffOnceTargets = $logoffOnceItem.targets
-        $logoffOnceUsersList = if ($logoffOnceTargets) { Get-TargetLines -Value $logoffOnceTargets.users } else { @() }
-        $logoffOnceGroupsList = if ($logoffOnceTargets) { Get-TargetLines -Value $logoffOnceTargets.groups } else { @() }
-        $logoffOnceUsers.TextBox.Text = ($logoffOnceUsersList -join "`r`n")
-        $logoffOnceGroups.TextBox.Text = ($logoffOnceGroupsList -join "`r`n")
-        $logoffOnceActionsList = Normalize-Actions $logoffOnceItem.actions
-        Set-ActionsToGrid -Grid $logoffOnceActions.Grid -ActionNames $actionNames -Actions $logoffOnceActionsList
-    }
-
-    $lblPolicyStatus.Text = "Policy geladen."
-
-    if ($logonOnce.Count -gt 1 -or $logoffOnce.Count -gt 1) {
-        $lblPolicyStatus.Text = "Policy geladen (mehrere Once-Kampagnen gefunden; nur erste angezeigt)."
-    }
-}
-
-function Build-OnceEntry {
-    param(
-        [bool]$Enabled,
-        [string]$CampaignId,
-        [string]$ValidUntil,
-        [string[]]$Users,
-        [string[]]$Groups,
-        [object[]]$Actions
-    )
-
-    return [pscustomobject]@{
-        enabled = $Enabled
-        campaignId = $CampaignId
-        validUntil = $ValidUntil
-        targets = [pscustomobject]@{
-            users = $Users
-            groups = $Groups
-        }
-        actions = $Actions
-    }
-}
-
-function Save-UIToPolicy {
-    $logonEveryActionsList = Get-ActionsFromGrid -Grid $logonEveryActions.Grid
-    $logoffEveryActionsList = Get-ActionsFromGrid -Grid $logoffEveryActions.Grid
-
-    if ($null -eq $logonEveryActionsList) { $logonEveryActionsList = @() }
-    if ($null -eq $logoffEveryActionsList) { $logoffEveryActionsList = @() }
-
-    if ($logonEveryActionsList -isnot [System.Array]) { $logonEveryActionsList = @($logonEveryActionsList) }
-    if ($logoffEveryActionsList -isnot [System.Array]) { $logoffEveryActionsList = @($logoffEveryActionsList) }
-
-    $logonOnceActionsList = Get-ActionsFromGrid -Grid $logonOnceActions.Grid
-    $logoffOnceActionsList = Get-ActionsFromGrid -Grid $logoffOnceActions.Grid
-
-    $logonOnceCampaignId = $logonOnceCampaign.TextBox.Text.Trim()
-    $logoffOnceCampaignId = $logoffOnceCampaign.TextBox.Text.Trim()
-
-    $logonOnceValidUntilValue = $logonOnceValidUntil.TextBox.Text.Trim()
-    $logoffOnceValidUntilValue = $logoffOnceValidUntil.TextBox.Text.Trim()
-
-    if ($logonOnceValidUntilValue -and ($logonOnceValidUntilValue -notmatch "^\d{4}-\d{2}-\d{2}$")) {
-        [System.Windows.Forms.MessageBox]::Show("logon.once: ValidUntil muss YYYY-MM-DD sein.", "Validierung", "OK", "Warning") | Out-Null
-        return
-    }
-
-    if ($logoffOnceValidUntilValue -and ($logoffOnceValidUntilValue -notmatch "^\d{4}-\d{2}-\d{2}$")) {
-        [System.Windows.Forms.MessageBox]::Show("logoff.once: ValidUntil muss YYYY-MM-DD sein.", "Validierung", "OK", "Warning") | Out-Null
-        return
-    }
-
-    $logonOnceUsersList = Get-Lines -Text $logonOnceUsers.TextBox.Text
-    $logonOnceGroupsList = Get-Lines -Text $logonOnceGroups.TextBox.Text
-    $logoffOnceUsersList = Get-Lines -Text $logoffOnceUsers.TextBox.Text
-    $logoffOnceGroupsList = Get-Lines -Text $logoffOnceGroups.TextBox.Text
-
-    if ($null -eq $logonOnceUsersList) { $logonOnceUsersList = @() }
-    if ($null -eq $logonOnceGroupsList) { $logonOnceGroupsList = @() }
-    if ($null -eq $logoffOnceUsersList) { $logoffOnceUsersList = @() }
-    if ($null -eq $logoffOnceGroupsList) { $logoffOnceGroupsList = @() }
-
-    $hasLogonOnceTargets = ($logonOnceUsersList.Count -gt 0) -or ($logonOnceGroupsList.Count -gt 0)
-    $hasLogoffOnceTargets = ($logoffOnceUsersList.Count -gt 0) -or ($logoffOnceGroupsList.Count -gt 0)
-
-    $hasLogonOnceInput = ($logonOnceCampaignId -or $logonOnceActionsList.Count -gt 0 -or $hasLogonOnceTargets)
-    $hasLogoffOnceInput = ($logoffOnceCampaignId -or $logoffOnceActionsList.Count -gt 0 -or $hasLogoffOnceTargets)
-
-    if ($hasLogonOnceInput) {
-        if (-not $logonOnceCampaignId) {
-            [System.Windows.Forms.MessageBox]::Show("logon.once: CampaignId darf nicht leer sein.", "Validierung", "OK", "Warning") | Out-Null
-            return
-        }
-    }
-
-    if ($hasLogoffOnceInput) {
-        if (-not $logoffOnceCampaignId) {
-            [System.Windows.Forms.MessageBox]::Show("logoff.once: CampaignId darf nicht leer sein.", "Validierung", "OK", "Warning") | Out-Null
-            return
-        }
-    }
-
-    $logonOnceEntry = $null
-    $logoffOnceEntry = $null
-
-    if ($hasLogonOnceInput) {
-        $logonOnceEntry = Build-OnceEntry -Enabled $chkLogonOnceEnabled.Checked -CampaignId $logonOnceCampaignId -ValidUntil $logonOnceValidUntilValue -Users $logonOnceUsersList -Groups $logonOnceGroupsList -Actions $logonOnceActionsList
-    }
-
-    if ($hasLogoffOnceInput) {
-        $logoffOnceEntry = Build-OnceEntry -Enabled $chkLogoffOnceEnabled.Checked -CampaignId $logoffOnceCampaignId -ValidUntil $logoffOnceValidUntilValue -Users $logoffOnceUsersList -Groups $logoffOnceGroupsList -Actions $logoffOnceActionsList
-    }
-
-    $policyOut = [pscustomobject]@{
-        logon = [pscustomobject]@{
-            every = [pscustomobject]@{
-                enabled = $chkLogonEveryEnabled.Checked
-                actions = $logonEveryActionsList
-            }
-            once = @()
-        }
-        logoff = [pscustomobject]@{
-            every = [pscustomobject]@{
-                enabled = $chkLogoffEveryEnabled.Checked
-                actions = $logoffEveryActionsList
-            }
-            once = @()
-        }
-    }
-
-    if ($logonOnceEntry) { $policyOut.logon.once = @($logonOnceEntry) }
-    if ($logoffOnceEntry) { $policyOut.logoff.once = @($logoffOnceEntry) }
-
-    return $policyOut
-}
-
 $btnPolicyLoad.Add_Click({
     try {
-        Load-PolicyIntoUI
         Convert-PolicyToPocRows -Policy (Read-PolicyJson)
+        $lblPolicyStatus.Text = "Policy geladen."
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Policy konnte nicht geladen werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
@@ -2433,8 +2004,8 @@ $btnOpenLogs.Add_Click({
 
 Load-CustomerIntoUi
 if ($autoLoadPolicy) {
-    Load-PolicyIntoUI
     Convert-PolicyToPocRows -Policy (Read-PolicyJson)
+    $lblPolicyStatus.Text = "Policy geladen."
 }
 
 $form.Controls.Add($tabs)
