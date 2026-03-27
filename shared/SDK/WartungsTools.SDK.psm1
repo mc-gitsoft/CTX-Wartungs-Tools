@@ -153,6 +153,11 @@ function Stop-SessionProcesses {
         [switch]$UseTaskkillFallback
     )
 
+    # Skip process termination in offline mode (no active user session)
+    if ($env:CTX_OFFLINE -eq "1") {
+        return 0
+    }
+
     try {
         $sessionId = (Get-Process -Id $PID).SessionId
     }
@@ -265,12 +270,36 @@ function Clear-RegistryPath {
     <#
     .SYNOPSIS
         Entfernt einen HKCU-Registry-Schlüssel rekursiv und sicher.
+        Im Offline-Modus wird NTUSER.DAT temporaer geladen.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Path
     )
+
+    # Offline mode: load NTUSER.DAT, remap path, operate, unload
+    if ($env:CTX_OFFLINE -eq "1" -and $env:CTX_PROFILE_ROOT -and $Path -match '^HKCU:\\') {
+        $ntUserDat = Join-Path $env:CTX_PROFILE_ROOT "NTUSER.DAT"
+        if (-not (Test-Path $ntUserDat)) { return $true }
+
+        $hiveKey = "HKU\CTX_OFFLINE_HIVE"
+        $regPath = $Path -replace '^HKCU:\\', ''
+
+        try {
+            & reg load $hiveKey $ntUserDat 2>$null
+            $offlinePath = "Registry::HKEY_USERS\CTX_OFFLINE_HIVE\$regPath"
+            if (Test-Path $offlinePath) {
+                Remove-Item -Path $offlinePath -Recurse -Force -ErrorAction Stop
+            }
+            return $true
+        } catch {
+            return $false
+        } finally {
+            [gc]::Collect()
+            & reg unload $hiveKey 2>$null
+        }
+    }
 
     if (-not (Test-Path $Path)) {
         return $true
@@ -347,5 +376,105 @@ function Invoke-Action {
     }
 }
 
-Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath
+function Resolve-FSLogixProfilePath {
+    <#
+    .SYNOPSIS
+        Loest den FSLogix-Profil-VHD(X)-Pfad fuer einen Benutzer auf.
+    .DESCRIPTION
+        FSLogix speichert Profile als VHD(X) unter:
+        <ProfileShare>\<UserSID>_<Username>\Profile_<Username>.VHD(X)
+        Alternativ: <ProfileShare>\<Username>\Profile_<Username>.VHD(X)
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$User,
+
+        [Parameter(Mandatory)]
+        [string]$ProfileShare
+    )
+
+    if (-not (Test-Path $ProfileShare)) { return $null }
+
+    $username = if ($User -match '\\(.+)$') { $Matches[1] } else { $User }
+
+    # Try SID-based folder pattern first (SID_Username)
+    $sidFolders = Get-ChildItem -Path $ProfileShare -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match ("_" + [regex]::Escape($username) + "$") }
+
+    $searchDirs = @()
+    if ($sidFolders) { $searchDirs += $sidFolders.FullName }
+    # Also try plain username folder
+    $plainDir = Join-Path $ProfileShare $username
+    if (Test-Path $plainDir) { $searchDirs += $plainDir }
+
+    foreach ($dir in $searchDirs) {
+        $vhdx = Get-ChildItem -Path $dir -Filter "Profile_*.VHDX" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($vhdx) { return $vhdx.FullName }
+        $vhd = Get-ChildItem -Path $dir -Filter "Profile_*.VHD" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($vhd) { return $vhd.FullName }
+    }
+
+    return $null
+}
+
+function Mount-FSLogixVHD {
+    <#
+    .SYNOPSIS
+        Mountet ein FSLogix-Profil-VHD(X) und gibt den Mount-Pfad zurueck.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$VhdPath
+    )
+
+    if (-not (Test-Path $VhdPath)) {
+        throw "VHD not found: $VhdPath"
+    }
+
+    try {
+        Mount-VHD -Path $VhdPath -NoDriveLetter -ReadOnly -ErrorAction Stop
+        $disk = Get-VHD -Path $VhdPath -ErrorAction Stop
+        $partitions = Get-Partition -DiskNumber $disk.DiskNumber -ErrorAction Stop
+        $volume = $partitions | Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.FileSystemLabel -or $_.DriveLetter }
+
+        if (-not $volume) {
+            # Use access path from first partition
+            $accessPath = ($partitions | Where-Object { $_.AccessPaths.Count -gt 0 } | Select-Object -First 1).AccessPaths[0]
+            return $accessPath
+        }
+
+        if ($volume.DriveLetter) {
+            return "$($volume.DriveLetter):\"
+        }
+
+        $accessPath = ($partitions | Where-Object { $_.AccessPaths.Count -gt 0 } | Select-Object -First 1).AccessPaths[0]
+        return $accessPath
+    } catch {
+        try { Dismount-VHD -Path $VhdPath -ErrorAction SilentlyContinue } catch { }
+        throw "Failed to mount VHD: $($_.Exception.Message)"
+    }
+}
+
+function Dismount-FSLogixVHD {
+    <#
+    .SYNOPSIS
+        Dismountet ein FSLogix-Profil-VHD(X).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$VhdPath
+    )
+
+    try {
+        Dismount-VHD -Path $VhdPath -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Resolve-FSLogixProfilePath, Mount-FSLogixVHD, Dismount-FSLogixVHD
 

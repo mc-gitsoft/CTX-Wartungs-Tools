@@ -45,21 +45,66 @@ if ($Trigger -eq "Offline" -and -not $TargetUser) {
     throw "Offline trigger requires -TargetUser in DOMAIN\\User format."
 }
 
+$customerConfig = Get-CustomerConfig
+
 $contextProfileRoot = $env:USERPROFILE
+$savedAppData = $env:APPDATA
+$savedLocalAppData = $env:LOCALAPPDATA
+$offlineMode = $false
+
 if ($Trigger -eq "Offline") {
-    $contextProfileRoot = Resolve-OfflineProfileRoot -User $TargetUser
-    Write-Log -Level "INFO" -Message ("Offline mode (stub): TargetUser={0}; ProfileRoot={1}" -f $TargetUser, $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
+    if (-not $customerConfig.flags.allowOffline) {
+        Write-Log -Level "WARN" -Message "Offline mode disabled in customer.json (flags.allowOffline = false)" -ToolId $toolId -Trigger $Trigger
+        exit 0
+    }
+
+    $mountedVhd = $null
+
+    # Try FSLogix first if configured
+    if ($customerConfig.fslogix -and $customerConfig.fslogix.enabled -and $customerConfig.fslogix.profileShare) {
+        $vhdPath = Resolve-FSLogixProfilePath -User $TargetUser -ProfileShare $customerConfig.fslogix.profileShare
+        if ($vhdPath) {
+            Write-Log -Level "INFO" -Message ("FSLogix VHD found: {0}" -f $vhdPath) -ToolId $toolId -Trigger $Trigger
+            try {
+                $mountPath = Mount-FSLogixVHD -VhdPath $vhdPath
+                $contextProfileRoot = Join-Path $mountPath "Profile"
+                $mountedVhd = $vhdPath
+                Write-Log -Level "INFO" -Message ("FSLogix VHD mounted: {0} -> {1}" -f $vhdPath, $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
+            } catch {
+                Write-Log -Level "ERROR" -Message ("FSLogix mount failed: {0}" -f $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
+                exit 1
+            }
+        } else {
+            Write-Log -Level "WARN" -Message ("FSLogix VHD not found for user: {0}" -f $TargetUser) -ToolId $toolId -Trigger $Trigger
+        }
+    }
+
+    # Fallback to static offline profile directory
+    if (-not $mountedVhd) {
+        $contextProfileRoot = Resolve-OfflineProfileRoot -User $TargetUser
+        if (-not (Test-Path $contextProfileRoot)) {
+            Write-Log -Level "ERROR" -Message ("Offline profile root not found: {0}" -f $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
+            exit 1
+        }
+    }
+
+    $offlineMode = $true
+    $env:APPDATA = Join-Path $contextProfileRoot "AppData\Roaming"
+    $env:LOCALAPPDATA = Join-Path $contextProfileRoot "AppData\Local"
+    Write-Log -Level "INFO" -Message ("Offline mode: TargetUser={0}; ProfileRoot={1}; APPDATA={2}; LOCALAPPDATA={3}" -f $TargetUser, $contextProfileRoot, $env:APPDATA, $env:LOCALAPPDATA) -ToolId $toolId -Trigger $Trigger
 }
 
 $Context = @{
     Trigger = $Trigger
     TargetUser = $TargetUser
     ProfileRoot = $contextProfileRoot
+    OfflineMode = $offlineMode
 }
 
 $env:CTX_TRIGGER = $Context.Trigger
 $env:CTX_TARGET_USER = $Context.TargetUser
 $env:CTX_PROFILE_ROOT = $Context.ProfileRoot
+$env:CTX_OFFLINE = if ($offlineMode) { "1" } else { "0" }
 
 Write-Log -Level "INFO" -Message ("Runner start: Trigger={0}; ToolId={1}; ToolRoot={2}; LOCALAPPDATA={3}; TargetUser={4}" -f $Trigger, $toolId, $toolRoot, $env:LOCALAPPDATA, $TargetUser) -ToolId $toolId -Trigger $Trigger
 Write-Log -Level "INFO" -Message ("Context: CTX_TRIGGER={0}; CTX_TARGET_USER={1}; CTX_PROFILE_ROOT={2}" -f $env:CTX_TRIGGER, $env:CTX_TARGET_USER, $env:CTX_PROFILE_ROOT) -ToolId $toolId -Trigger $Trigger
@@ -251,4 +296,23 @@ foreach ($block in $blocks) {
             Write-Log -Level "WARN" -Message ("Skip state write due to errors: {0}" -f $stateFile) -ToolId $toolId -Trigger $Trigger
         }
     }
+}
+
+# Restore environment variables and dismount VHD after offline execution
+if ($offlineMode) {
+    $env:APPDATA = $savedAppData
+    $env:LOCALAPPDATA = $savedLocalAppData
+
+    if ($mountedVhd) {
+        [gc]::Collect()
+        Start-Sleep -Milliseconds 500
+        $dismountOk = Dismount-FSLogixVHD -VhdPath $mountedVhd
+        if ($dismountOk) {
+            Write-Log -Level "INFO" -Message ("FSLogix VHD dismounted: {0}" -f $mountedVhd) -ToolId $toolId -Trigger $Trigger
+        } else {
+            Write-Log -Level "WARN" -Message ("FSLogix VHD dismount failed: {0}" -f $mountedVhd) -ToolId $toolId -Trigger $Trigger
+        }
+    }
+
+    Write-Log -Level "INFO" -Message "Offline mode: environment restored." -ToolId $toolId -Trigger $Trigger
 }
