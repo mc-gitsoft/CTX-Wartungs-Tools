@@ -1312,7 +1312,12 @@ $btnPocPreview.Add_Click({
         $includeDisabled = $chkIncludeDisabled.Checked
 
         $policy = Get-PreviewPolicyFromGrid -Rows $gridActionsPoc.Rows -IncludeDisabled:$includeDisabled
-        $section = if ($trigger -eq "Logon") { $policy.logon } else { $policy.logoff }
+        $section = switch ($trigger) {
+            "Logon"  { $policy.logon }
+            "Logoff" { $policy.logoff }
+            "Offline" { $policy.offline }
+            default  { $policy.logoff }
+        }
 
         $lines = @()
         $lines += ("Trigger: {0} | User: {1}" -f $trigger, $userInput)

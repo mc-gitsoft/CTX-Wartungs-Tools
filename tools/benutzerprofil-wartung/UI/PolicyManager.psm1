@@ -8,6 +8,10 @@ function Get-DefaultPolicy {
             every = [pscustomobject]@{ enabled = $false; actions = @() }
             once = @()
         }
+        offline = [pscustomobject]@{
+            every = [pscustomobject]@{ enabled = $false; actions = @() }
+            once = @()
+        }
     }
 }
 
@@ -15,7 +19,7 @@ function Get-DefaultCustomer {
     return [pscustomobject]@{
         customer = [pscustomobject]@{ name = "" }
         paths = [pscustomobject]@{ repoRoot = "" }
-        fslogix = [pscustomobject]@{ enabled = $false; profileShare = ""; officeContainerShare = "" }
+        fslogix = [pscustomobject]@{ enabled = $false }
         branding = [pscustomobject]@{ windowTitle = "Wartung Admin"; supportText = "" }
         logging = [pscustomobject]@{ relativeLogPath = "logs"; adminLogRoot = "" }
         flags = [pscustomobject]@{ allowOffline = $true; allowLogoffRunner = $true }

@@ -46,7 +46,7 @@ function Resolve-OfflineProfileRoot {
     return ("C:\\_OfflineProfiles\\{0}" -f $sanitized)
 }
 
-if ($Trigger -eq "Offline" -and -not $TargetUser -and -not $VhdPath) {
+if ($Trigger -eq "Offline" -and -not $TargetUser -and -not $VhdPath -and -not $PreviewOnly) {
     throw "Offline trigger requires -VhdPath or -TargetUser."
 }
 
