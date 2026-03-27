@@ -6,6 +6,9 @@ tools/*/*.log
 tools/*/state/
 tools/*/.state/
 
+# Customer-specific config
+tools/*/policy.json
+
 # Local test/debug files
 *.tmp
 *.bak
