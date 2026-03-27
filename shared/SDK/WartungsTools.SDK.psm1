@@ -385,7 +385,9 @@ function Mount-FSLogixVHD {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$VhdPath
+        [string]$VhdPath,
+
+        [switch]$ReadOnly
     )
 
     if (-not (Test-Path $VhdPath)) {
@@ -393,7 +395,8 @@ function Mount-FSLogixVHD {
     }
 
     try {
-        $diskImage = Mount-DiskImage -ImagePath $VhdPath -Access ReadOnly -PassThru -ErrorAction Stop
+        $access = if ($ReadOnly) { "ReadOnly" } else { "ReadWrite" }
+        $diskImage = Mount-DiskImage -ImagePath $VhdPath -Access $access -PassThru -ErrorAction Stop
         $disk = $diskImage | Get-Disk -ErrorAction Stop
         $partitions = $disk | Get-Partition -ErrorAction Stop
         $volume = $partitions | Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter }
