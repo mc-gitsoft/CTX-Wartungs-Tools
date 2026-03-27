@@ -393,11 +393,11 @@ function Normalize-Every {
 function Get-DefaultPolicy {
     return [pscustomobject]@{
         logon = [pscustomobject]@{
-            every = [pscustomobject]@{ enabled = $false; actions = @() }
+            every = [pscustomobject]@{ enabled = $false; actions = @(); targets = [pscustomobject]@{ users = @(); groups = @() } }
             once = @()
         }
         logoff = [pscustomobject]@{
-            every = [pscustomobject]@{ enabled = $false; actions = @() }
+            every = [pscustomobject]@{ enabled = $false; actions = @(); targets = [pscustomobject]@{ users = @(); groups = @() } }
             once = @()
         }
     }
@@ -1017,6 +1017,10 @@ function Get-PreviewPolicyFromGrid {
     $policy = Get-DefaultPolicy
     $logonEveryActions = @()
     $logoffEveryActions = @()
+    $logonEveryUsers = @()
+    $logonEveryGroups = @()
+    $logoffEveryUsers = @()
+    $logoffEveryGroups = @()
     $logonOnceGroups = @{}
     $logoffOnceGroups = @{}
 
@@ -1058,11 +1062,17 @@ function Get-PreviewPolicyFromGrid {
         }
 
         if ($frequency -eq "Every") {
+            $users = Split-TargetText -Text $targetsUsersText
+            $groups = Split-TargetText -Text $targetsGroupsText
             if ($trigger -eq "Logon" -or $trigger -eq "Both") {
                 $logonEveryActions += $actionObj
+                $logonEveryUsers += $users
+                $logonEveryGroups += $groups
             }
             if ($trigger -eq "Logoff" -or $trigger -eq "Both") {
                 $logoffEveryActions += $actionObj
+                $logoffEveryUsers += $users
+                $logoffEveryGroups += $groups
             }
             continue
         }
@@ -1106,6 +1116,8 @@ function Get-PreviewPolicyFromGrid {
     $policy.logoff.every.actions = $logoffEveryActions
     $policy.logon.every.enabled = ($logonEveryActions.Count -gt 0)
     $policy.logoff.every.enabled = ($logoffEveryActions.Count -gt 0)
+    $policy.logon.every.targets = [pscustomobject]@{ users = @($logonEveryUsers | Select-Object -Unique); groups = @($logonEveryGroups | Select-Object -Unique) }
+    $policy.logoff.every.targets = [pscustomobject]@{ users = @($logoffEveryUsers | Select-Object -Unique); groups = @($logoffEveryGroups | Select-Object -Unique) }
     $policy.logon.once = @($logonOnceGroups.Values)
     $policy.logoff.once = @($logoffOnceGroups.Values)
 
@@ -1511,6 +1523,9 @@ function Convert-PolicyToPocRows {
     $logoffEvery = Normalize-Every $Policy.logoff.every
 
     if ($logonEvery -and $logonEvery.actions) {
+        $evTargets = $logonEvery.targets
+        $evUsers = if ($evTargets) { @($evTargets.users) } else { @() }
+        $evGroups = if ($evTargets) { @($evTargets.groups) } else { @() }
         foreach ($action in @($logonEvery.actions)) {
             Add-PocRow -Grid $gridActionsPoc -RowData @{
                 Enabled = [bool]$logonEvery.enabled
@@ -1521,13 +1536,16 @@ function Convert-PolicyToPocRows {
                 Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
                 CampaignId = ""
                 ValidUntil = ""
-                TargetsUsers = ""
-                TargetsGroups = ""
+                TargetsUsers = ($evUsers -join "`r`n")
+                TargetsGroups = ($evGroups -join "`r`n")
             }
         }
     }
 
     if ($logoffEvery -and $logoffEvery.actions) {
+        $evTargets = $logoffEvery.targets
+        $evUsers = if ($evTargets) { @($evTargets.users) } else { @() }
+        $evGroups = if ($evTargets) { @($evTargets.groups) } else { @() }
         foreach ($action in @($logoffEvery.actions)) {
             Add-PocRow -Grid $gridActionsPoc -RowData @{
                 Enabled = [bool]$logoffEvery.enabled
@@ -1538,8 +1556,8 @@ function Convert-PolicyToPocRows {
                 Params = if ($action.params) { ($action.params | ConvertTo-Json -Depth 6 -Compress) } else { "" }
                 CampaignId = ""
                 ValidUntil = ""
-                TargetsUsers = ""
-                TargetsGroups = ""
+                TargetsUsers = ($evUsers -join "`r`n")
+                TargetsGroups = ($evGroups -join "`r`n")
             }
         }
     }
@@ -1608,6 +1626,10 @@ function Convert-PocRowsToPolicy {
 
     $logonEveryActions = @()
     $logoffEveryActions = @()
+    $logonEveryUsers = @()
+    $logonEveryGroups = @()
+    $logoffEveryUsers = @()
+    $logoffEveryGroups = @()
     $logonOnceGroups = @{}
     $logoffOnceGroups = @{}
 
@@ -1647,9 +1669,6 @@ function Convert-PocRowsToPolicy {
             }
         }
 
-        if ($null -eq $users) { $users = @() }
-        if ($null -eq $groups) { $groups = @() }
-
         $actionObj = [pscustomobject]@{
             name = $actionName
             mode = $mode
@@ -1657,11 +1676,17 @@ function Convert-PocRowsToPolicy {
         }
 
         if ($frequency -eq "Every") {
+            $users = Split-TargetText -Text $targetsUsersText
+            $groups = Split-TargetText -Text $targetsGroupsText
             if ($trigger -eq "Logon" -or $trigger -eq "Both") {
                 $logonEveryActions += $actionObj
+                $logonEveryUsers += $users
+                $logonEveryGroups += $groups
             }
             if ($trigger -eq "Logoff" -or $trigger -eq "Both") {
                 $logoffEveryActions += $actionObj
+                $logoffEveryUsers += $users
+                $logoffEveryGroups += $groups
             }
             $rowNumber += 1
             continue
@@ -1709,6 +1734,8 @@ function Convert-PocRowsToPolicy {
     $policy.logoff.every.actions = $logoffEveryActions
     $policy.logon.every.enabled = ($logonEveryActions.Count -gt 0)
     $policy.logoff.every.enabled = ($logoffEveryActions.Count -gt 0)
+    $policy.logon.every.targets = [pscustomobject]@{ users = @($logonEveryUsers | Select-Object -Unique); groups = @($logonEveryGroups | Select-Object -Unique) }
+    $policy.logoff.every.targets = [pscustomobject]@{ users = @($logoffEveryUsers | Select-Object -Unique); groups = @($logoffEveryGroups | Select-Object -Unique) }
     $policy.logon.once = @($logonOnceGroups.Values)
     $policy.logoff.once = @($logoffOnceGroups.Values)
 
