@@ -78,10 +78,9 @@ function Invoke-TeamsAppxReset {
     }
 
     # Classic-Teams-Dateipfade (falls vorhanden) aufraeumen
-    $classicDirs = @(
-        (Join-Path $env:APPDATA      'Microsoft\Teams'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\Teams')
-    )
+    $classicDirs = @()
+    $classicDirs += WartungsTools.SDK\Resolve-OfflinePaths -Base Roaming -RelativePath 'Microsoft\Teams'
+    $classicDirs += WartungsTools.SDK\Resolve-OfflinePaths -Base Local   -RelativePath 'Microsoft\Teams'
     foreach ($d in $classicDirs) {
         Remove-TeamsPath -Path $d
     }
@@ -127,11 +126,9 @@ function Invoke-Teams2Reset {
 
     # 3. Normaler Reset: nur Cache loeschen
     if ($ClearCache) {
-        $pkgBase = Join-Path $env:LOCALAPPDATA 'Packages\MSTeams_8wekyb3d8bbwe'
-        $targets = @(
-            (Join-Path $pkgBase 'LocalCache\Microsoft\MSTeams'),
-            (Join-Path $pkgBase 'TempState')
-        )
+        $targets = @()
+        $targets += WartungsTools.SDK\Resolve-OfflinePaths -Base Local -RelativePath 'Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams'
+        $targets += WartungsTools.SDK\Resolve-OfflinePaths -Base Local -RelativePath 'Packages\MSTeams_8wekyb3d8bbwe\TempState'
 
         foreach ($t in $targets) {
             Remove-TeamsPath -Path $t

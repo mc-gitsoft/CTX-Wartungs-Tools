@@ -437,5 +437,37 @@ function Dismount-FSLogixVHD {
     }
 }
 
-Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Mount-FSLogixVHD, Dismount-FSLogixVHD
+function Resolve-OfflinePaths {
+    <#
+    .SYNOPSIS
+        Gibt alle relevanten Pfade fuer einen relativen AppData-Pfad zurueck.
+        Im Offline-Modus mit ODFC werden sowohl Profil- als auch Office-Container-Pfade geprueft.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("Roaming","Local")]
+        [string]$Base,
+
+        [Parameter(Mandatory)]
+        [string]$RelativePath
+    )
+
+    $paths = @()
+
+    $root = if ($Base -eq "Roaming") { $env:APPDATA } else { $env:LOCALAPPDATA }
+    if ($root) { $paths += Join-Path $root $RelativePath }
+
+    if ($env:CTX_ODFC_ROOT) {
+        $subDir = if ($Base -eq "Roaming") { "AppData\Roaming" } else { "AppData\Local" }
+        $odfcPath1 = Join-Path $env:CTX_ODFC_ROOT "ODFC\$subDir\$RelativePath"
+        $odfcPath2 = Join-Path $env:CTX_ODFC_ROOT "$subDir\$RelativePath"
+        if (Test-Path $odfcPath1) { $paths += $odfcPath1 }
+        elseif (Test-Path $odfcPath2) { $paths += $odfcPath2 }
+    }
+
+    return $paths
+}
+
+Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Mount-FSLogixVHD, Dismount-FSLogixVHD, Resolve-OfflinePaths
 

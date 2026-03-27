@@ -52,12 +52,11 @@ function Stop-OfficeProcesses {
 function Clear-OutlookCache {
     Write-Log "Starte Standard-Reset (Cache und temporaere Dateien)..."
 
-    $paths = @(
-        (Join-Path $env:APPDATA      'Microsoft\Outlook\RoamCache'),
-        (Join-Path $env:APPDATA      'Microsoft\Outlook\Offline Address Books'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\Outlook'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\INetCache\Content.Outlook')
-    )
+    $paths = @()
+    $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Roaming -RelativePath 'Microsoft\Outlook\RoamCache'
+    $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Roaming -RelativePath 'Microsoft\Outlook\Offline Address Books'
+    $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Local   -RelativePath 'Microsoft\Outlook'
+    $paths += WartungsTools.SDK\Resolve-OfflinePaths -Base Local   -RelativePath 'Microsoft\Windows\INetCache\Content.Outlook'
 
     foreach ($p in $paths) {
         if (Test-Path $p) {
@@ -117,13 +116,15 @@ function Reset-OutlookHard {
 function Repair-OfficeWebAddins {
     Write-Log "Starte Reparatur: Office-Web-Add-Ins (Wef/WebView2)..."
 
-    $wefWebView2 = Join-Path $env:LOCALAPPDATA 'Microsoft\Office\16.0\Wef\webview2'
-    if (Test-Path $wefWebView2) {
-        $removed = WartungsTools.SDK\Remove-PathSafe -Path $wefWebView2
-        if ($removed) { Write-Log ("Web Add-ins bereinigt: {0}" -f $wefWebView2) }
-        else { Write-Log ("Web Add-ins nicht vollstaendig bereinigt: {0}" -f $wefWebView2) 'WARN' }
-    } else {
-        Write-Log ("Wef/WebView2 nicht vorhanden: {0}" -f $wefWebView2)
+    $wefPaths = WartungsTools.SDK\Resolve-OfflinePaths -Base Local -RelativePath 'Microsoft\Office\16.0\Wef\webview2'
+    foreach ($wefWebView2 in $wefPaths) {
+        if (Test-Path $wefWebView2) {
+            $removed = WartungsTools.SDK\Remove-PathSafe -Path $wefWebView2
+            if ($removed) { Write-Log ("Web Add-ins bereinigt: {0}" -f $wefWebView2) }
+            else { Write-Log ("Web Add-ins nicht vollstaendig bereinigt: {0}" -f $wefWebView2) 'WARN' }
+        } else {
+            Write-Log ("Wef/WebView2 nicht vorhanden: {0}" -f $wefWebView2)
+        }
     }
 
     Write-Log "Reparatur Office-Web-Add-Ins abgeschlossen."
