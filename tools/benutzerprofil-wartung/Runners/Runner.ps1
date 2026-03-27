@@ -126,6 +126,23 @@ if ($Trigger -eq "Offline") {
     $offlineMode = $true
     $env:APPDATA = Join-Path $contextProfileRoot "AppData\Roaming"
     $env:LOCALAPPDATA = Join-Path $contextProfileRoot "AppData\Local"
+
+    # NTUSER.DAT einmal laden fuer alle Registry-Operationen
+    $ntUserDat = Join-Path $contextProfileRoot "NTUSER.DAT"
+    $offlineHiveLoaded = $false
+    if (Test-Path $ntUserDat) {
+        $loadResult = & reg load "HKU\CTX_OFFLINE_HIVE" $ntUserDat 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $offlineHiveLoaded = $true
+            $env:CTX_OFFLINE_HIVE = "CTX_OFFLINE_HIVE"
+            Write-Log -Level "INFO" -Message ("NTUSER.DAT geladen: {0}" -f $ntUserDat) -ToolId $toolId -Trigger $Trigger
+        } else {
+            Write-Log -Level "WARN" -Message ("NTUSER.DAT laden fehlgeschlagen: {0}" -f $loadResult) -ToolId $toolId -Trigger $Trigger
+        }
+    } else {
+        Write-Log -Level "WARN" -Message ("NTUSER.DAT nicht gefunden: {0}" -f $ntUserDat) -ToolId $toolId -Trigger $Trigger
+    }
+
     Write-Log -Level "INFO" -Message ("Offline mode: TargetUser={0}; ProfileRoot={1}; APPDATA={2}; LOCALAPPDATA={3}" -f $TargetUser, $contextProfileRoot, $env:APPDATA, $env:LOCALAPPDATA) -ToolId $toolId -Trigger $Trigger
 }
 
@@ -337,6 +354,27 @@ foreach ($block in $blocks) {
 if ($offlineMode) {
     $env:APPDATA = $savedAppData
     $env:LOCALAPPDATA = $savedLocalAppData
+
+    # NTUSER.DAT entladen BEVOR VHD dismounted wird
+    if ($offlineHiveLoaded) {
+        [gc]::Collect()
+        Start-Sleep -Milliseconds 500
+        $unloadResult = & reg unload "HKU\CTX_OFFLINE_HIVE" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Log -Level "INFO" -Message "NTUSER.DAT entladen." -ToolId $toolId -Trigger $Trigger
+        } else {
+            # Retry nach kurzem Warten
+            Start-Sleep -Milliseconds 1000
+            [gc]::Collect()
+            $unloadResult = & reg unload "HKU\CTX_OFFLINE_HIVE" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Log -Level "INFO" -Message "NTUSER.DAT entladen (2. Versuch)." -ToolId $toolId -Trigger $Trigger
+            } else {
+                Write-Log -Level "WARN" -Message ("NTUSER.DAT entladen fehlgeschlagen: {0}" -f $unloadResult) -ToolId $toolId -Trigger $Trigger
+            }
+        }
+        $env:CTX_OFFLINE_HIVE = $null
+    }
 
     [gc]::Collect()
     Start-Sleep -Milliseconds 500
