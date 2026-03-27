@@ -440,8 +440,8 @@ function Dismount-FSLogixVHD {
 function Resolve-OfflinePaths {
     <#
     .SYNOPSIS
-        Gibt alle relevanten Pfade fuer einen relativen AppData-Pfad zurueck.
-        Im Offline-Modus mit ODFC werden sowohl Profil- als auch Office-Container-Pfade geprueft.
+        Gibt alle relevanten Pfade fuer einen relativen AppData-Pfad zurueck
+        (Profil-Container / Live-Profil). Fuer ODFC-Pfade stattdessen Get-OdfcPaths verwenden.
     #>
     [CmdletBinding()]
     param(
@@ -458,39 +458,31 @@ function Resolve-OfflinePaths {
     $root = if ($Base -eq "Roaming") { $env:APPDATA } else { $env:LOCALAPPDATA }
     if ($root) { $paths += Join-Path $root $RelativePath }
 
-    if ($env:CTX_ODFC_ROOT) {
-        $subDir = if ($Base -eq "Roaming") { "AppData\Roaming" } else { "AppData\Local" }
-        # Known ODFC container structures (ordered by likelihood)
-        $candidates = @(
-            (Join-Path $env:CTX_ODFC_ROOT "Profile\$subDir\$RelativePath"),
-            (Join-Path $env:CTX_ODFC_ROOT "ODFC\$subDir\$RelativePath"),
-            (Join-Path $env:CTX_ODFC_ROOT "$subDir\$RelativePath")
-        )
-        $found = $false
-        foreach ($c in $candidates) {
-            if (Test-Path $c) {
-                $paths += $c
-                $found = $true
-                break
-            }
-        }
-        # Fallback: scan top-level dirs for AppData structure
-        if (-not $found) {
-            try {
-                $topDirs = Get-ChildItem -LiteralPath $env:CTX_ODFC_ROOT -Directory -ErrorAction SilentlyContinue
-                foreach ($d in $topDirs) {
-                    $candidate = Join-Path $d.FullName "$subDir\$RelativePath"
-                    if (Test-Path $candidate) {
-                        $paths += $candidate
-                        break
-                    }
-                }
-            } catch { }
-        }
+    return $paths
+}
+
+function Get-OdfcPaths {
+    <#
+    .SYNOPSIS
+        Gibt existierende ODFC-App-Ordner zurueck. ODFC-Container nutzen eine eigene
+        Ordnerstruktur mit App-spezifischen Verzeichnissen (z.B. ODFC, Outlook_UWP, Teams, Teams_UWP).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$AppFolders
+    )
+
+    $paths = @()
+    if (-not $env:CTX_ODFC_ROOT) { return $paths }
+
+    foreach ($folder in $AppFolders) {
+        $p = Join-Path $env:CTX_ODFC_ROOT $folder
+        if (Test-Path -LiteralPath $p) { $paths += $p }
     }
 
     return $paths
 }
 
-Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Mount-FSLogixVHD, Dismount-FSLogixVHD, Resolve-OfflinePaths
+Export-ModuleMember -Function Get-ToolRoot, Get-CustomerConfig, Get-PolicyConfig, Write-Log, ConvertTo-Hashtable, Invoke-Action, Stop-SessionProcesses, Remove-PathSafe, Clear-RegistryPath, Mount-FSLogixVHD, Dismount-FSLogixVHD, Resolve-OfflinePaths, Get-OdfcPaths
 

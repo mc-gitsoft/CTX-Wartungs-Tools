@@ -120,6 +120,9 @@ function Invoke-Teams2Reset {
     # 2. Hard-Reset?
     if ($HardReset) {
         Invoke-TeamsAppxReset
+        # ODFC: Teams-Ordner loeschen
+        $odfcTeams = WartungsTools.SDK\Get-OdfcPaths -AppFolders @('Teams', 'Teams_UWP')
+        foreach ($t in $odfcTeams) { Remove-TeamsPath -Path $t }
         Write-Log "Hard-Reset ausgefuehrt."
         return @{ ExitCode = 0; Errors = 0; Warnings = 0 }
     }
@@ -129,6 +132,8 @@ function Invoke-Teams2Reset {
         $targets = @()
         $targets += WartungsTools.SDK\Resolve-OfflinePaths -Base Local -RelativePath 'Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams'
         $targets += WartungsTools.SDK\Resolve-OfflinePaths -Base Local -RelativePath 'Packages\MSTeams_8wekyb3d8bbwe\TempState'
+        # ODFC: Teams-Ordner loeschen
+        $targets += WartungsTools.SDK\Get-OdfcPaths -AppFolders @('Teams', 'Teams_UWP')
 
         foreach ($t in $targets) {
             Remove-TeamsPath -Path $t
