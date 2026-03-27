@@ -380,6 +380,7 @@ function Mount-FSLogixVHD {
     <#
     .SYNOPSIS
         Mountet ein FSLogix-Profil-VHD(X) und gibt den Mount-Pfad zurueck.
+        Nutzt Mount-DiskImage (Storage-Modul, ueberall verfuegbar) statt Mount-VHD (Hyper-V).
     #>
     [CmdletBinding()]
     param(
@@ -392,25 +393,24 @@ function Mount-FSLogixVHD {
     }
 
     try {
-        Mount-VHD -Path $VhdPath -NoDriveLetter -ReadOnly -ErrorAction Stop
-        $disk = Get-VHD -Path $VhdPath -ErrorAction Stop
-        $partitions = Get-Partition -DiskNumber $disk.DiskNumber -ErrorAction Stop
-        $volume = $partitions | Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.FileSystemLabel -or $_.DriveLetter }
+        $diskImage = Mount-DiskImage -ImagePath $VhdPath -Access ReadOnly -PassThru -ErrorAction Stop
+        $disk = $diskImage | Get-Disk -ErrorAction Stop
+        $partitions = $disk | Get-Partition -ErrorAction Stop
+        $volume = $partitions | Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter }
 
-        if (-not $volume) {
-            # Use access path from first partition
-            $accessPath = ($partitions | Where-Object { $_.AccessPaths.Count -gt 0 } | Select-Object -First 1).AccessPaths[0]
-            return $accessPath
-        }
-
-        if ($volume.DriveLetter) {
+        if ($volume) {
             return "$($volume.DriveLetter):\"
         }
 
+        # No drive letter assigned — use access path
         $accessPath = ($partitions | Where-Object { $_.AccessPaths.Count -gt 0 } | Select-Object -First 1).AccessPaths[0]
-        return $accessPath
+        if ($accessPath) {
+            return $accessPath
+        }
+
+        throw "No volume or access path found after mounting."
     } catch {
-        try { Dismount-VHD -Path $VhdPath -ErrorAction SilentlyContinue } catch { }
+        try { Dismount-DiskImage -ImagePath $VhdPath -ErrorAction SilentlyContinue } catch { }
         throw "Failed to mount VHD: $($_.Exception.Message)"
     }
 }
@@ -427,7 +427,7 @@ function Dismount-FSLogixVHD {
     )
 
     try {
-        Dismount-VHD -Path $VhdPath -ErrorAction Stop
+        Dismount-DiskImage -ImagePath $VhdPath -ErrorAction Stop
         return $true
     } catch {
         return $false
