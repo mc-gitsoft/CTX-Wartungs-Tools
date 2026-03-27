@@ -3,7 +3,8 @@ param(
     [string]$Trigger,
     [switch]$PreviewOnly,
     [string]$TargetUser,
-    [string]$VhdPath
+    [string]$VhdPath,
+    [string]$OdfcPath
 )
 
 $toolRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
@@ -80,6 +81,7 @@ if ($Trigger -eq "Offline") {
     }
 
     $mountedVhd = $null
+    $mountedOdfc = $null
 
     if ($VhdPath) {
         # Mount directly specified VHD(X) container
@@ -102,6 +104,22 @@ if ($Trigger -eq "Offline") {
         if (-not (Test-Path $contextProfileRoot)) {
             Write-Log -Level "ERROR" -Message ("Offline profile root not found: {0}" -f $contextProfileRoot) -ToolId $toolId -Trigger $Trigger
             exit 1
+        }
+    }
+
+    # Mount Office-Container (ODFC) if specified
+    if ($OdfcPath) {
+        if (-not (Test-Path $OdfcPath)) {
+            Write-Log -Level "WARN" -Message ("ODFC not found: {0}" -f $OdfcPath) -ToolId $toolId -Trigger $Trigger
+        } else {
+            try {
+                $odfcMountPath = Mount-FSLogixVHD -VhdPath $OdfcPath
+                $mountedOdfc = $OdfcPath
+                $env:CTX_ODFC_ROOT = $odfcMountPath
+                Write-Log -Level "INFO" -Message ("ODFC mounted: {0} -> {1}" -f $OdfcPath, $odfcMountPath) -ToolId $toolId -Trigger $Trigger
+            } catch {
+                Write-Log -Level "WARN" -Message ("ODFC mount failed: {0}" -f $_.Exception.Message) -ToolId $toolId -Trigger $Trigger
+            }
         }
     }
 
@@ -320,16 +338,27 @@ if ($offlineMode) {
     $env:APPDATA = $savedAppData
     $env:LOCALAPPDATA = $savedLocalAppData
 
-    if ($mountedVhd) {
-        [gc]::Collect()
-        Start-Sleep -Milliseconds 500
-        $dismountOk = Dismount-FSLogixVHD -VhdPath $mountedVhd
+    [gc]::Collect()
+    Start-Sleep -Milliseconds 500
+
+    if ($mountedOdfc) {
+        $dismountOk = Dismount-FSLogixVHD -VhdPath $mountedOdfc
         if ($dismountOk) {
-            Write-Log -Level "INFO" -Message ("FSLogix VHD dismounted: {0}" -f $mountedVhd) -ToolId $toolId -Trigger $Trigger
+            Write-Log -Level "INFO" -Message ("ODFC dismounted: {0}" -f $mountedOdfc) -ToolId $toolId -Trigger $Trigger
         } else {
-            Write-Log -Level "WARN" -Message ("FSLogix VHD dismount failed: {0}" -f $mountedVhd) -ToolId $toolId -Trigger $Trigger
+            Write-Log -Level "WARN" -Message ("ODFC dismount failed: {0}" -f $mountedOdfc) -ToolId $toolId -Trigger $Trigger
         }
     }
 
+    if ($mountedVhd) {
+        $dismountOk = Dismount-FSLogixVHD -VhdPath $mountedVhd
+        if ($dismountOk) {
+            Write-Log -Level "INFO" -Message ("VHD dismounted: {0}" -f $mountedVhd) -ToolId $toolId -Trigger $Trigger
+        } else {
+            Write-Log -Level "WARN" -Message ("VHD dismount failed: {0}" -f $mountedVhd) -ToolId $toolId -Trigger $Trigger
+        }
+    }
+
+    $env:CTX_ODFC_ROOT = $null
     Write-Log -Level "INFO" -Message "Offline mode: environment restored." -ToolId $toolId -Trigger $Trigger
 }

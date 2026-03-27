@@ -1510,6 +1510,10 @@ function Read-PolicyJson {
                 if ($loaded.logoff.every) { $policy.logoff.every = $loaded.logoff.every }
                 if ($loaded.logoff.once) { $policy.logoff.once = $loaded.logoff.once }
             }
+            if ($loaded.offline) {
+                if ($loaded.offline.every) { $policy.offline.every = $loaded.offline.every }
+                if ($loaded.offline.once) { $policy.offline.once = $loaded.offline.once }
+            }
         } catch {
             [System.Windows.Forms.MessageBox]::Show("policy.json ist ungueltig. Defaults geladen.", "Hinweis", "OK", "Warning") | Out-Null
             $policy = Get-DefaultPolicy
@@ -2054,13 +2058,32 @@ $btnConfigOpen.Add_Click({
 })
 
 $btnOfflineRun.Add_Click({
-    # VHD/VHDX Datei auswaehlen
+    # Profil-Container auswaehlen (Pflicht)
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
-    $dlg.Title = "VHD(X)-Container auswaehlen"
+    $dlg.Title = "Profil-Container (Profile_*.VHDX) auswaehlen"
     $dlg.Filter = "VHD/VHDX Dateien (*.vhd;*.vhdx)|*.vhd;*.vhdx|Alle Dateien (*.*)|*.*"
     $dlg.RestoreDirectory = $true
     if ($dlg.ShowDialog() -ne "OK") { return }
     $selectedVhd = $dlg.FileName
+
+    # Office-Container optional auswaehlen (ODFC)
+    $selectedOdfc = ""
+    $odfcResult = [System.Windows.Forms.MessageBox]::Show(
+        "Soll zusaetzlich ein Office-Container (ODFC_*.VHDX) gemountet werden?`n`n" +
+        "Der Office-Container enthaelt Outlook-, Teams- und OneDrive-Daten.",
+        "Office-Container", "YesNo", "Question"
+    )
+    if ($odfcResult -eq "Yes") {
+        $dlgOdfc = New-Object System.Windows.Forms.OpenFileDialog
+        $dlgOdfc.Title = "Office-Container (ODFC_*.VHDX) auswaehlen"
+        $dlgOdfc.Filter = "VHD/VHDX Dateien (*.vhd;*.vhdx)|*.vhd;*.vhdx|Alle Dateien (*.*)|*.*"
+        $dlgOdfc.RestoreDirectory = $true
+        # Try to start in same directory as profile container
+        $dlgOdfc.InitialDirectory = [System.IO.Path]::GetDirectoryName($selectedVhd)
+        if ($dlgOdfc.ShowDialog() -eq "OK") {
+            $selectedOdfc = $dlgOdfc.FileName
+        }
+    }
 
     # Policy speichern und Runner starten
     try {
@@ -2070,8 +2093,13 @@ $btnOfflineRun.Add_Click({
 
         $runnerPath = Join-Path $toolRoot "Runners\Runner.ps1"
         $runnerArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`" -Trigger Offline -VhdPath `"$selectedVhd`""
+        if ($selectedOdfc) {
+            $runnerArgs += " -OdfcPath `"$selectedOdfc`""
+        }
         Start-Process powershell.exe -ArgumentList $runnerArgs -Verb RunAs
-        $lblPolicyStatus.Text = "Offline-Runner gestartet: $selectedVhd"
+        $statusText = "Offline-Runner gestartet: $selectedVhd"
+        if ($selectedOdfc) { $statusText += " + ODFC" }
+        $lblPolicyStatus.Text = $statusText
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Offline-Runner konnte nicht gestartet werden: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
     }
