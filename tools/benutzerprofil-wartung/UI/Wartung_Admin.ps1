@@ -149,10 +149,14 @@ function Show-ParamsEditorDialog {
     $dialogResult = $dlg.ShowDialog()
     if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
 
-    # Build result hashtable
+    # Build result hashtable — only include non-default values
     $result = [ordered]@{}
     foreach ($paramDef in $paramDefs) {
-        $result[$paramDef.name] = $checkboxes[$paramDef.name].Checked
+        $checked = $checkboxes[$paramDef.name].Checked
+        $default = [bool]$paramDef.default
+        if ($checked -ne $default) {
+            $result[$paramDef.name] = $checked
+        }
     }
     return ($result | ConvertTo-Json -Compress)
 }
