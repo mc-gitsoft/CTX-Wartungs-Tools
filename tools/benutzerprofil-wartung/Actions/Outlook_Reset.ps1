@@ -127,6 +127,7 @@ function Reset-OutlookHard {
     }
 
     $root = 'HKCU:\Software\Microsoft\Office\16.0\Outlook'
+    Write-Log ("Registry: CTX_OFFLINE={0}; CTX_OFFLINE_HIVE={1}" -f $env:CTX_OFFLINE, $env:CTX_OFFLINE_HIVE)
     $removed = WartungsTools.SDK\Clear-RegistryPath -Path $root
     if ($removed) { Write-Log ("Kompletter Outlook-Schluessel geloescht: {0}" -f $root) }
     else { Write-Log ("Outlook-Schluessel konnte nicht geloescht werden: {0}" -f $root) 'WARN' }
