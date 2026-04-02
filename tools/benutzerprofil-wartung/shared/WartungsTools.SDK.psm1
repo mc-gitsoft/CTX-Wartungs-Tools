@@ -281,20 +281,33 @@ function Clear-RegistryPath {
     # Offline mode: HKCU auf vorgeladene Hive umleiten (Runner laedt/entlaedt NTUSER.DAT)
     if ($env:CTX_OFFLINE -eq "1" -and $Path -match '^HKCU:\\') {
         if (-not $env:CTX_OFFLINE_HIVE) {
-            Write-Warning "Offline-Modus aber keine Registry-Hive geladen (CTX_OFFLINE_HIVE nicht gesetzt)"
+            Write-Log -Level "WARN" -Message "Offline-Modus aber keine Registry-Hive geladen (CTX_OFFLINE_HIVE nicht gesetzt)"
             return $false
         }
 
         $regPath = $Path -replace '^HKCU:\\', ''
         $offlinePath = "Registry::HKEY_USERS\$($env:CTX_OFFLINE_HIVE)\$regPath"
+        Write-Log -Level "INFO" -Message ("Registry-Offline: Pruefe {0}" -f $offlinePath)
 
         try {
-            if (Test-Path $offlinePath) {
+            $exists = Test-Path $offlinePath
+            Write-Log -Level "INFO" -Message ("Registry-Offline: Key existiert={0}" -f $exists)
+            if ($exists) {
                 Remove-Item -Path $offlinePath -Recurse -Force -ErrorAction Stop
+                Write-Log -Level "INFO" -Message ("Registry-Offline: Key geloescht: {0}" -f $offlinePath)
+            } else {
+                # Debug: zeige vorhandene Schluessel
+                $parentPath = "Registry::HKEY_USERS\$($env:CTX_OFFLINE_HIVE)\Software\Microsoft"
+                if (Test-Path $parentPath) {
+                    $children = Get-ChildItem -Path $parentPath -ErrorAction SilentlyContinue | ForEach-Object { $_.PSChildName }
+                    Write-Log -Level "INFO" -Message ("Registry-Offline: Keys unter Software\Microsoft: {0}" -f ($children -join ', '))
+                } else {
+                    Write-Log -Level "WARN" -Message ("Registry-Offline: Elternpfad existiert nicht: {0}" -f $parentPath)
+                }
             }
             return $true
         } catch {
-            Write-Warning ("Registry-Offline-Fehler: {0}" -f $_.Exception.Message)
+            Write-Log -Level "ERROR" -Message ("Registry-Offline-Fehler: {0}" -f $_.Exception.Message)
             return $false
         }
     }

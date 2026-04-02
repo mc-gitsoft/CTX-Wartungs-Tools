@@ -373,6 +373,32 @@ if ($offlineMode) {
                 Write-Log -Level "WARN" -Message ("NTUSER.DAT entladen fehlgeschlagen: {0}" -f $unloadResult) -ToolId $toolId -Trigger $Trigger
             }
         }
+
+        # Verifikation: Hive nochmal laden und pruefen ob Aenderungen persistent sind
+        $ntUserDat = Join-Path $contextProfileRoot "NTUSER.DAT"
+        $verifyLoad = & reg load "HKU\CTX_VERIFY_HIVE" $ntUserDat 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $testKeys = @(
+                "Registry::HKEY_USERS\CTX_VERIFY_HIVE\Software\Adobe\Adobe Acrobat",
+                "Registry::HKEY_USERS\CTX_VERIFY_HIVE\Software\Microsoft\Office\16.0\Outlook"
+            )
+            foreach ($tk in $testKeys) {
+                $exists = Test-Path $tk
+                Write-Log -Level "INFO" -Message ("VERIFY nach unload: {0} existiert={1}" -f $tk, $exists) -ToolId $toolId -Trigger $Trigger
+            }
+            [gc]::Collect()
+            Start-Sleep -Milliseconds 300
+            & reg unload "HKU\CTX_VERIFY_HIVE" 2>$null
+        } else {
+            Write-Log -Level "WARN" -Message ("VERIFY: Hive reload fehlgeschlagen: {0}" -f $verifyLoad) -ToolId $toolId -Trigger $Trigger
+        }
+
+        # NTUSER.DAT Dateiaenderung pruefen
+        if (Test-Path $ntUserDat) {
+            $ntInfo = Get-Item $ntUserDat
+            Write-Log -Level "INFO" -Message ("NTUSER.DAT LastWriteTime={0}; Size={1} bytes" -f $ntInfo.LastWriteTime.ToString("s"), $ntInfo.Length) -ToolId $toolId -Trigger $Trigger
+        }
+
         $env:CTX_OFFLINE_HIVE = $null
     }
 
